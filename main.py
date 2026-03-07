@@ -1,5 +1,5 @@
 def main():
-    print("Hello From HealthTech!")
+    print("Hello From ealthTech!")
 
 
 if __name__ == "__main__":
