@@ -9,4 +9,5 @@ dependencies = [
     "tensorflow>=2.20.0",
     "easyocr>=1.7.1",
     "requests>=2.31.0",
+    "ultralytics>=8.4.26",
 ]
