@@ -14,8 +14,8 @@ def run_object_detection():
     logging.info("Starting YOLO object detection application.")
 
     try:
-        model = YOLO("yolov8n.pt")
-        logging.info("YOLOv8n model loaded successfully.")
+        model = YOLO("YoloModels/yolov11n.pt")
+        logging.info("YOLOv11n model loaded successfully.")
     except Exception as e:
         logging.error(f"Error loading YOLO model: {e}")
         return
