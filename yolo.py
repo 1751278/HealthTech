@@ -20,7 +20,7 @@ def run_object_detection():
         logging.error(f"Error loading YOLO model: {e}")
         return
 
-    cap = cv2.VideoCapture(1)
+    cap = cv2.VideoCapture(1)#Change to zero if not working
     if not cap.isOpened():
         logging.error("Failed to open webcam. Exiting.")
         return
