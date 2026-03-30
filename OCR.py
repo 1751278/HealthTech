@@ -21,17 +21,18 @@ cv2.waitKey(0)# wait until a key is pressed
 cv2.destroyAllWindows() # close the window
 
 
-# This is old code
 ocr = PaddleOCR(
     use_doc_orientation_classify=False,
     use_doc_unwarping=False,
     use_textline_orientation=False,
+    enable_mkldnn=True,#might be a little faster 
     lang="en")
 
 
 ##This is where I learn that OCRs are just slow. It can probably handle one frame per second, but any more may be problematic with the current settings.
 def main():
     print("Hello From HealthTech!")
+
     result = ocr.predict(img, text_rec_score_thresh = 0.7) ## THIS THRESH HOLD ALLOWS ALMOST EVERYTHING TO BE READ FROM THE SIGN BESIDES THE 7 FOR SOME REASON, SOME TWEAKING MAY NEED TO BE DONE
     for i, res in enumerate(result, start=1):
             for text, score in zip(res["rec_texts"], res["rec_scores"]): #res["thingy"] grabs whatever thingy is from the result. (EX: "rec_texts", "rec_boxes", "text_rec_scores_thresh")
