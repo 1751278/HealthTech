@@ -5,15 +5,15 @@
 ###########
 
 #### USE THESE TO SAVE TIME, BUT IDK IF IT WORKS FOR OTHERS PROBABLY DON'T DO THIS FIRST RUN THROUGH ####
-#import os
-#os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
+import os
+os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
 ################################################################
 
 from paddleocr import PaddleOCR
 import cv2
 
-img = cv2.imread(r"C:\Users\Ethan\Documents\GitHub\HealthTech\Test\signs.jpg")
-img = cv2.resize(img, (640,480)) # Resize the image to 640x480, this actually improves accuracy and fits our needs
+img = cv2.imread("Test/signs.jpg")
+img = cv2.resize(img, (640,480)) # Resizethe image to 640x480, this actually improves accuracy and fits our needs
 if img is None:
     raise FileNotFoundError("signs.jpg not found")
 cv2.imshow("OCR Image", img) # I might choose a different method for this but for now yeah
@@ -21,6 +21,7 @@ cv2.waitKey(0)# wait until a key is pressed
 cv2.destroyAllWindows() # close the window
 
 
+# This is old code
 ocr = PaddleOCR(
     use_doc_orientation_classify=False,
     use_doc_unwarping=False,
