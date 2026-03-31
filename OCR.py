@@ -12,7 +12,7 @@ os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
 from paddleocr import PaddleOCR
 import cv2
 
-img = cv2.imread("Test/signs.jpg")
+img = cv2.imread("Test/name.jpg")
 img = cv2.resize(img, (640,480)) # Resizethe image to 640x480, this actually improves accuracy and fits our needs
 if img is None:
     raise FileNotFoundError("signs.jpg not found")
