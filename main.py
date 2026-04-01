@@ -23,7 +23,8 @@ def main():
             print("\n Frame number:", fnum)
             fnum += 1
             cv2.imshow('Live Camera Feed', frame)
-            OCR.read_text_from_image(frame)  # Call the OCR function to read text from the current frame
+            img = cv2.resize(frame, (640,480)) # Resize the image to 640x480, this actually improves accuracy and fits our needs
+            OCR.read_text_from_image(img)  # Call the OCR function to read text from the current frame
             
         else:
             print("Error: Failed to capture frame.")
