@@ -50,7 +50,7 @@ def main():
 
 
 if __name__ == "__main__":
-    img = cv2.imread("Test/name.jpg")
+    img = cv2.imread("TestImage/name.jpg")
     img = cv2.resize(img, (640,480)) # Resizethe image to 640x480, this actually improves accuracy and fits our needs
 
     if img is None:
