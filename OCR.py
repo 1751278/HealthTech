@@ -8,21 +8,20 @@ import time
 import cv2
 import easyocr
 
-
-img = cv2.imread("Test/name.jpg")
-img = cv2.resize(img, (640,480)) # Resizethe image to 640x480, this actually improves accuracy and fits our needs
-if img is None:
-    raise FileNotFoundError("signs.jpg not found")
-print("If you are waiting here forever, look for a new window with a iamge and press any key to continue")
-cv2.imshow("OCR Image", img) # I might choose a different method for this but for now yeah
-cv2.waitKey(0)# wait until a key is pressed
-cv2.destroyAllWindows() # close the window
 model_start_time = time.perf_counter()
 ocr = easyocr.Reader(['en'], gpu=False) # this is the OCR reader, it takes a list of languages to read. In this case, it's set to English. It can be modified to read other languages if needed.
 model_load_time = time.perf_counter()
 
 
-##This is where I learn that OCRs are just slow. It can probably handle one frame per second, but any more may be problematic with the current settings.
+
+def read_text_from_image(image):
+    result = ocr.readtext(image)
+    for (bbox, text, prob) in result:
+        print(f"Text: {text}, Confidence: {prob}")
+    return result
+
+
+
 def main():
     print("Hello From HealthTech! \n")
     model_start_prediction_time = time.perf_counter()
@@ -51,4 +50,14 @@ def main():
 
 
 if __name__ == "__main__":
+    img = cv2.imread("Test/name.jpg")
+    img = cv2.resize(img, (640,480)) # Resizethe image to 640x480, this actually improves accuracy and fits our needs
+
+    if img is None:
+        raise FileNotFoundError("signs.jpg not found")
+    print("If you are waiting here forever, look for a new window with a iamge and press any key to continue")
+    cv2.imshow("OCR Image", img) # I might choose a different method for this but for now yeah
+    cv2.waitKey(0)# wait until a key is pressed
+    cv2.destroyAllWindows() # close the window
+
     main()

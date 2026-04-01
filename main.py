@@ -1,5 +1,10 @@
 import cv2
+import OCR #Gets the OCR File and its functions
+
+
+
 def main():
+    fnum = 0  # The Current Frame number
     cap = cv2.VideoCapture(0)
 
     # Check if the camera opened successfully.
@@ -12,10 +17,14 @@ def main():
     while True:
         # Capture frame-by-frame
         ret, frame = cap.read()
-
+        
         # If the frame was successfully read, display it
         if ret:
+            print("\n Frame number:", fnum)
+            fnum += 1
             cv2.imshow('Live Camera Feed', frame)
+            OCR.read_text_from_image(frame)  # Call the OCR function to read text from the current frame
+            
         else:
             print("Error: Failed to capture frame.")
             break
@@ -23,7 +32,7 @@ def main():
         # Break the loop when the 'q' key is pressed
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
-
+        
     # Release the capture object and destroy all windows when done.
     cap.release()
     cv2.destroyAllWindows()
