@@ -4,11 +4,6 @@
 #Description: This is the OCR module for HealthTech. It uses EasyOCR to read text from images. The current implementation reads from a static image, but it can be modified to read from a video feed or camera input in the future.
 ###########
 
-#### USE THESE TO SAVE TIME, BUT IDK IF IT WORKS FOR OTHERS PROBABLY DON'T DO THIS FIRST RUN THROUGH ####
-import os
-os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
-################################################################
-
 import time
 import cv2
 import easyocr
