@@ -5,7 +5,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12.12"
 dependencies = [
-    "opencv-contrib-python>=4.13.0.92",
+    "easyocr>=1.7.2",
+    "opencv-python>=4.13.0.92",
     "tensorflow>=2.20.0",
     "easyocr>=1.7.1",
     "requests>=2.31.0",
