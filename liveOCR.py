@@ -1,6 +1,8 @@
 import time
 import cv2
 import easyocr
+import torch
+print(f"CUDA Available: {torch.cuda.is_available()}")
 
 def main():
     print("Hello From HealthTech! \n")
@@ -39,7 +41,7 @@ def main():
                 ## make bound box
                 cv2.rectangle(frame, top_left, bottom_right, (0, 255, 0), 2)
                 ## put text on image
-                cv2.putText(frame, text, (top_left[0]-20, top_left[1]), fontFace = cv2.FONT_HERSHEY_SIMPLEX, fontScale = 0.5, color = (0, 0, 255), thickness = 1) #CV2 uses BGR
+                cv2.putText(frame, text, (top_left[0]-20, top_left[1]), fontFace = cv2.FONT_HERSHEY_SIMPLEX, fontScale = 0.5, color = (0, 0, 255), thickness = 2) #CV2 uses BGR
         
         cv2.putText(frame, f"FPS:{1/(cur_time-prev_time):.2f}", (5, 15), fontFace = cv2.FONT_HERSHEY_SIMPLEX, fontScale = 0.5, color = (0,0,255), thickness = 2)
         cv2.imshow("Live text detection", frame)
