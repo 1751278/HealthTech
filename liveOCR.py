@@ -6,7 +6,7 @@ print(f"CUDA Available: {torch.cuda.is_available()}")
 
 def main():
     print("Hello From HealthTech! \n")
-    ocr = easyocr.Reader(['en'], gpu=True) # this is the OCR reader, it takes a list of languages to read. In this case, it's set to English. It can be modified to read other languages if needed.
+    ocr = easyocr.Reader(['en'], gpu=True, quantize=True) # this is the OCR reader, it takes a list of languages to read. In this case, it's set to English. It can be modified to read other languages if needed.
     THRESH = 0.90 #probability threshhold for displaying prediction
 
     cap = cv2.VideoCapture(1)#Change to zero if not working
