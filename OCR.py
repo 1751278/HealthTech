@@ -9,7 +9,7 @@ import cv2
 import easyocr
 
 model_start_time = time.perf_counter()
-ocr = easyocr.Reader(['en'], gpu=False) # this is the OCR reader, it takes a list of languages to read. In this case, it's set to English. It can be modified to read other languages if needed.
+ocr = easyocr.Reader(['en'], gpu=False, quantize=True) # this is the OCR reader, it takes a list of languages to read. In this case, it's set to English. It can be modified to read other languages if needed.
 model_load_time = time.perf_counter()
 
 
