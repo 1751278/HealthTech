@@ -1,8 +1,7 @@
 import cv2
-import torch
 
 # For NVIDIA GPUs
-print(torch.cuda.is_available()) 
+#print(torch.cuda.is_available()) 
 
 
 def main():
