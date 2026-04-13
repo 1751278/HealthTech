@@ -9,6 +9,7 @@ def main():
     ocr = easyocr.Reader(['en'], gpu=True, quantize=True) # this is the OCR reader, it takes a list of languages to read. In this case, it's set to English. It can be modified to read other languages if needed.
     THRESH = 0.50 #probability threshhold for displaying prediction
 
+    cap = cv2.VideoCapture(0)#Change to zero if not working
     if not cap.isOpened():
         print("Failed to open webcam. Exiting.")
         return
@@ -24,6 +25,7 @@ def main():
         cur_time = time.perf_counter()
         success, frame = cap.read()
 
+        #frame = cv2.resize(frame, (360, 640))#vertical phone resolution
         if not success:
             print("Failed to grab frame. Exiting loop.")
             break
