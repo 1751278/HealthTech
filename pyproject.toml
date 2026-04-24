@@ -11,4 +11,11 @@ dependencies = [
     "easyocr>=1.7.1",
     "requests>=2.31.0",
     "ultralytics>=8.4.26",
+    "gradio-imageslider>=0.0.20",
+    "gradio>=6.13.0",
+    "matplotlib>=3.10.8",
+    "torch>=2.11.0",
+    "torchvision>=0.26.0",
+    "pixellib>=0.7.1",
 ]
+
