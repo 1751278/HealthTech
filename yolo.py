@@ -14,13 +14,13 @@ def run_object_detection():
     logging.info("Starting YOLO object detection application.")
 
     try:
-        model = YOLO("YoloModels/yolov11n.pt")
+        model = YOLO("YoloModels/yolo11n.pt")
         logging.info("YOLOv11n model loaded successfully.")
     except Exception as e:
         logging.error(f"Error loading YOLO model: {e}")
         return
 
-    cap = cv2.VideoCapture(0)#Change to zero if not working
+    cap = cv2.VideoCapture(1)#Change to zero if not working
     if not cap.isOpened():
         logging.error("Failed to open webcam. Exiting.")
         return
@@ -32,7 +32,7 @@ def run_object_detection():
 
     while True:
         success, frame = cap.read()
-        #frame = cv2.resize(frame, (360, 640))#vertical phone resolution
+        frame = cv2.resize(frame, (360, 640))#vertical phone resolution
         if not success:
             logging.warning("Failed to grab frame. Exiting loop.")
             break
