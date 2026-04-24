@@ -32,7 +32,7 @@ def run_object_detection():
 
     while True:
         success, frame = cap.read()
-        #frame = cv2.resize(frame, (360, 640))#vertical phone resolution
+        frame = cv2.resize(frame, (640, 480))#vertical phone resolution
         if not success:
             logging.warning("Failed to grab frame. Exiting loop.")
             break
