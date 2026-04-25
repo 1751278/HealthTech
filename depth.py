@@ -12,7 +12,7 @@ if __name__ == '__main__':
     
     # Changed to camera index (usually 0)
     parser.add_argument('--camera-id', type=int, default=0, help='ID of the camera/webcam device')
-    parser.add_argument('--input-size', type=int, default=518)
+    parser.add_argument('--input-size', type=int, default=256)
     parser.add_argument('--encoder', type=str, default='vits', choices=['vits', 'vitb', 'vitl', 'vitg'])
     parser.add_argument('--pred-only', action='store_true', help='only display the prediction')
     parser.add_argument('--grayscale', action='store_true', help='do not apply colorful palette')
