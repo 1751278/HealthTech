@@ -112,10 +112,11 @@ def draw_map(path, objects, pose_x, pose_y, origin, scale):
         cp = world_to_canvas(ox, oy, origin, scale)
         # only draw if its actually on screen
         if 0 <= cp[0] < MAP_SIZE and 0 <= cp[1] < MAP_SIZE:
-            cv2.circle(canvas, cp, 6, color, -1)
-            cv2.circle(canvas, cp, 6, (255, 255, 255), 1)  # white outline so its visible on dark bg
-            cv2.putText(canvas, label, (cp[0] + 9, cp[1] + 4),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, color, 1, cv2.LINE_AA)
+            pass
+            #cv2.circle(canvas, cp, 6, color, -1)
+            #cv2.circle(canvas, cp, 6, (255, 255, 255), 1)  # white outline so its visible on dark bg
+            #cv2.putText(canvas, label, (cp[0] + 9, cp[1] + 4),
+                   #     cv2.FONT_HERSHEY_SIMPLEX, 0.38, color, 1, cv2.LINE_AA)
 
     # draw ur current position as a green dot (bigger than the trail dots)
     curr = world_to_canvas(pose_x, pose_y, origin, scale)
@@ -129,10 +130,10 @@ def main():
     parser = argparse.ArgumentParser(description='Visual Odometry 2D Mapper')
 
     # source can be a number like 0 or 1 for webcam, or a url for phone camera
-    parser.add_argument('--source', default='0',
+    parser.add_argument('--source', default='1',
                         help='Camera index (e.g. 0) or stream URL (e.g. http://192.168.x.x:8080/video)')
     parser.add_argument('--encoder', default='vits', choices=['vits', 'vitb', 'vitl', 'vitg'])
-    parser.add_argument('--yolo-model', default='YoloModels/yolo11n.pt')
+    parser.add_argument('--yolo-model', default='YoloModels/yolov11n.pt')
 
     # dont run yolo every single frame, too slow. run it every N frames instead
     parser.add_argument('--yolo-interval', type=int, default=2,
