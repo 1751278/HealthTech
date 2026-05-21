@@ -186,6 +186,9 @@ def main():
     # where we are on the map, starts at 0,0 (center)
     pose_x, pose_y = 0.0, 0.0
 
+    # Direction the camera is facing in radians, starts facing "up" the map (towards negative y)
+    heading = 0.0 
+    
     # list of all positions we've been at, used to draw the trail
     path = [(0.0, 0.0)]
 
@@ -228,17 +231,13 @@ def main():
             good_curr = curr_pts[status.ravel() == 1]
 
             if len(good_curr) > 0:
-                # how much each point moved, reshape to (N, 2) bc opencv gives us (N, 1, 2)
-                flow = (good_curr - good_prev).reshape(-1, 2)
-
-                # use median instead of mean so one bad point doesnt mess everything up
-                dx = float(np.median(flow[:, 0]))
-                dy = float(np.median(flow[:, 1]))
-
-                # update our position, flip dy bc screen y is upside down vs map y
-                pose_x += dx * DISPLACEMENT_SCALE
-                pose_y -= dy * DISPLACEMENT_SCALE
-
+                M, inliers = cv2.estimateAffinePartial2D(good_prev, good_curr, method=cv2.RANSAC)
+                if M is not None:
+                    dx = M[0, 2]
+                    dy = M[1, 2]
+                    heading += np.arctan2(M[1, 0], M[0, 0])  # track rotation too
+                    pose_x += dx * DISPLACEMENT_SCALE
+                    pose_y -= dy * DISPLACEMENT_SCALE
             # keep the successfully tracked points for next frame
             prev_pts = (good_curr.reshape(-1, 1, 2)
                         if len(good_curr) >= MIN_FEATURES else None)
