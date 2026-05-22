@@ -15,7 +15,7 @@ while True:
     key = cv2.waitKey(1)
     if key % 256 == 32:  # SPACE pressed
         id = uuid.uuid4()
-        cv2.imwrite(f"DoorFrameData/train/{id}.jpg", frame)
+        cv2.imwrite(f"DoorFrameData/images/Train/{id}.jpg", frame)
         print(f"Image {id} saved!")
     elif key % 256 == 27:  # ESC pressed
         print("Closing...")
