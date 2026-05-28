@@ -46,11 +46,11 @@ parser.add_argument('--yolo-interval', type=int, default=2,
 
 # depth is even heavier than yolo so run it less often
 parser.add_argument('--depth-interval', type=int, default=5,
-                    help='Run depth model every N frames')1
+                    help='Run depth model every N frames')
 
 args = parser.parse_args()
 source = int(args.source) if args.source.isdigit() else args.source
-cap = cv2.VideoCapture(source-1)
+cap = cv2.VideoCapture(source)
 if not cap.isOpened():
     print("webcam not found, try VideoCapture(0)")
     exit()
