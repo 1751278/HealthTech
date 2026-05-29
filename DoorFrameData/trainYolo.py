@@ -7,7 +7,7 @@ def main():
     # Train the model
     results = model.train(
         data="doorFrameData.yaml",   # path to your config file
-        epochs=10,         # number of training rounds
+        epochs=20,         # number of training rounds
         imgsz=640,          # input image size
         device=0            # use GPU 0 (or "cpu" if no GPU is available)
     )
