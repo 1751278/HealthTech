@@ -13,7 +13,7 @@ def main():
     if not cap.isOpened():
         print("Failed to open webcam. Exiting.")
         return
-
+ 
     print("Webcam initialized. Starting video stream loop.")
 
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 480)
