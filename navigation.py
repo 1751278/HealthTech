@@ -1,7 +1,8 @@
 #################
-# make return a value
 # navigation.py
 # Created by Sahir Abrar May 28 2026
+# Last Updated: May 30 2026 by Sahir Abrar
+# Description: This module captures video from a camera, runs depth estimation and tells the user to navigate to the door.
 # TODO:
 # - Use NCNN TFlight model for depth estimation (faster/more efficient than current DPT)
 # - Make navigate() return a value
@@ -38,7 +39,7 @@ FRAME_HEIGHT     = 640
 DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
  
 # --- Processing intervals (run every N frames) ---
-DEFAULT_YOLO_INTERVAL  = 2
+DEFAULT_YOLO_INTERVAL  = 8
 DEFAULT_DEPTH_INTERVAL = 3
  
 # --- Zone weights ---
@@ -93,7 +94,7 @@ source = int(args.source) if args.source.isdigit() else args.source
  
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 cmap   = matplotlib.colormaps.get_cmap(DEPTH_COLORMAP)
- 
+LUT = (cmap(np.arange(256))[:, :3] * 255).astype(np.uint8)[:, ::-1]
 print("loading models...")
 yolo = YOLO(YOLO_MODEL_PATH)
  
@@ -209,7 +210,7 @@ def navigate():
     """
     Main navigation loop for obstacle avoidance and door detection.
     Captures video, runs depth estimation and object detection at specified intervals, and applies the steering algorithm to decide on a direction.
-    Displays annotated video feed with depth and detected boxes.
+    Displays the video feed with depth and detected boxes.
     
     """
     # Note: If Camo studio is not open, you may need to change source to (source - 1)
@@ -221,11 +222,13 @@ def navigate():
     frame_num   = 0
     depth_color = None
     boxes       = []
+    
+    # Intialize smoothed depth for visualization (not used in steering)
+    smoothed_depth = None
+    ALPHA = 0.7  # how much to trust the new frame vs history
  
     # Hysteresis state
     committed_steer  = "^ FORWARD"   # the direction currently being acted on
-    candidate_steer  = "^ FORWARD"   # direction the algorithm wants right now
-    candidate_count  = 0             # consecutive frames agreeing on candidate
     vote_buffer      = collections.deque(maxlen=HYSTERESIS_FRAMES) # buffer of recent steer decisions for hysteresis voting (hysteresis voting means we only switch to a new direction after several consecutive frames all agree on it, to avoid flickering)
  
     """
@@ -234,7 +237,7 @@ def navigate():
 depth_interval frames to compute steering direction, runs YOLO object
 detection every yolo_interval frames to find doors, then draws bounding
 boxes and the committed steering label onto the frame before displaying
-both the annotated camera feed and the depth colormap side by side.
+both the raw camera feed and the depth colormap side by side.
 Pressing 'q' exits the loop and releases the camera.
     """
     while True:
@@ -249,7 +252,18 @@ Pressing 'q' exits the loop and releases the camera.
         # --- Depth estimation ---
         if frame_num % args.depth_interval == 0:
             raw = depth_model.infer_image(frame, DEPTH_INFER_SIZE) # returns a 2D array of depth values (higher = closer)
-            depth_uint8 = ((raw - raw.min()) / (raw.max() - raw.min() + 1e-6) * 255).astype(np.uint8) # normalize to [0, 255]
+            
+            # Normalize raw depth to 0–255 for visualization and smoothing. Add small epsilon to denominator to avoid division by zero.
+            raw_norm = ((raw - raw.min()) / (raw.max() - raw.min() + 1e-6) * 255).astype(np.float32)
+            
+            # Apply smoothing
+            if smoothed_depth is None:
+                smoothed_depth = raw_norm
+            else:
+                smoothed_depth = ALPHA * raw_norm + (1 - ALPHA) * smoothed_depth
+                
+            # Convert to uint8 for steering algorithm and visualization
+            depth_uint8 = smoothed_depth.astype(np.uint8)
              
             # raw_steer is the new candidate direction based on current depth map, col is the dict of weighted column averages, and stats is the dict of all zone stats.
             raw_steer, col, stats = get_steer(depth_uint8) 
@@ -260,8 +274,11 @@ Pressing 'q' exits the loop and releases the camera.
             if len(vote_buffer) == HYSTERESIS_FRAMES and len(set(vote_buffer)) == 1:
                 committed_steer = raw_steer
             
-            # just the current frame's candidate for debugging: print(f"Candidate steer: {raw_steer}")
-            depth_color = (cmap(depth_uint8)[:, :, :3] * 255)[:, :, ::-1].astype(np.uint8)
+
+            # then inside the loop, just index into it
+            depth_color = LUT[depth_uint8]  # pure numpy indexing, much faster
+            
+            # Resize depth frame for side-by-side display
             depth_color = cv2.resize(depth_color, (w, h))
  
         # --- Object detection ---
@@ -269,22 +286,21 @@ Pressing 'q' exits the loop and releases the camera.
             results = yolo(frame, verbose=False)
             boxes   = results[0].boxes
  
-        # --- Draw annotations ---
-        annotated = frame.copy()
+        # --- Draw Frame ---
         for box in boxes:
             label           = yolo.names[int(box.cls[0])]
             x1, y1, x2, y2 = map(int, box.xyxy[0]) # bounding box coordinates
             color           = BOX_COLOR_DOOR if 'door' in label else BOX_COLOR_OTHER
-            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2) # draw box
-            cv2.putText(annotated, label, (x1, y1 - 5),
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2) # draw box
+            cv2.putText(frame, label, (x1, y1 - 5),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1) # draw label
  
         # draw steering label
-        cv2.putText(annotated, committed_steer, (w//2 - 90, h - 15),
+        cv2.putText(frame, committed_steer, (w//2 - 90, h - 15),
                     cv2.FONT_HERSHEY_SIMPLEX, STEER_FONT_SCALE, STEER_COLOR, STEER_THICKNESS)
  
-        # display annotated frame and depth side by side
-        out = np.hstack([annotated, depth_color]) if depth_color is not None else annotated
+        # display camera frame and depth side by side
+        out = np.hstack([frame, depth_color]) if depth_color is not None else frame
         cv2.imshow('navigator', out)
  
         # Exit on 'q' key press
