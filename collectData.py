@@ -1,3 +1,9 @@
+#################
+# collectData.py
+# Created by Kenshi Kadarusman May 21 2026
+# Last Updated: ?
+# Description: Collects training data for the door frame detection model. It uses a live camera feed to capture images of door frames and saves them to a specified directory. The user can press the space bar to capture an image and the ESC key to exit the application.
+#################
 import cv2
 import uuid
 

@@ -1,3 +1,9 @@
+#################
+# depth.py
+# Created by Rishan Reddy April 24 2026
+# Last Updated: ?
+# Description: This is the depth estimation module for HealthTech. It uses the Depth Anything V2 model to estimate depth from a live camera feed. The current implementation displays the depth map alongside the original camera feed, but it can be modified to return depth values for specific objects or regions of interest in the future.
+#################
 import argparse
 import cv2
 import matplotlib
@@ -23,7 +29,7 @@ if __name__ == '__main__':
 
     model_configs = {
         'vits': {'encoder': 'vits', 'features': 64, 'out_channels': [48, 96, 192, 384]},
-        'vitb': {'encoder': 'vitb', 'features': 128, 'out_channels': [96, 192, 384, 768]},
+        'vitb': {'encoder': 'vi tb', 'features': 128, 'out_channels': [96, 192, 384, 768]},
         'vitl': {'encoder': 'vitl', 'features': 256, 'out_channels': [256, 512, 1024, 1024]},
         'vitg': {'encoder': 'vitg', 'features': 384, 'out_channels': [1536, 1536, 1536, 1536]}
     }

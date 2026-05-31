@@ -1,6 +1,6 @@
 ###########
 #Last Updated: 3/31/2026
-#Author: Ethan
+#Author: Ethan Chan
 #Description: This is the OCR module for HealthTech. It uses EasyOCR to read text from images. The current implementation reads from a static image, but it can be modified to read from a video feed or camera input in the future.
 ###########
 

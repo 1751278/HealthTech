@@ -1,7 +1,16 @@
+#################
+# vo_mapper.py
+# Created by Gurveer Minhas April 27 2026
+# Last Updated: ?
+# Description: This is the visual odometry mapper module for HealthTech. It uses YOLO for object detection and Depth Anything V2 for depth estimation.
+# TODO:
+# - ?
+# - ?
+# - ?
+#################
 import argparse
 import math
 import sys
-
 import cv2
 import numpy as np
 import torch

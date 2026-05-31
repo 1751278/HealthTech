@@ -1,3 +1,11 @@
+######################################
+# yolo.py
+# Created by Rishan Reddy March 24 2026
+# Last Updated: ?
+#Comments: This is the YOLO object detection module for HealthTech. It uses YOLOv8 to detect objects in a live camera feed. The current implementation displays the detected objects on the video feed, but it can be modified to return the detected objects for further processing in the future.
+#Notes:
+#- May need to change cv2.VideoCapture(1) to cv2.VideoCapture(0) depending on the system. If you have multiple cameras, you may have to change the number to find the correct one.
+######################################
 import cv2
 from ultralytics import YOLO
 import logging

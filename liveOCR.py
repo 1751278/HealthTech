@@ -1,3 +1,11 @@
+######################################
+# liveOCR.py
+# Created by Kenshi Kadarusman April 1 2026
+# Last Updated: ?
+#Comments: This is the live OCR module for HealthTech. It uses EasyOCR to read text from a live camera feed. The current implementation displays the detected text on the video feed, but it can be modified to return the detected text for further processing in the future.
+#Notes:
+#- May have to change cv2.VideoCapture(1) to cv2.VideoCapture(0) depending on the system. If you have multiple cameras, you may have to change the number to find the correct one.
+######################################
 import time
 import cv2
 import easyocr
