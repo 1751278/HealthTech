@@ -1,3 +1,16 @@
+######################################
+#Comments: This is a live OCR demo using easyOCR.
+#Created: Ethan Chan
+#Notes:
+#- May have to change cv2.VideoCapture(1) to cv2.VideoCapture(0) depending on the system. If you have multiple cameras, you may have to change the number to find the correct one.
+#TODO:
+#- Make camera dynamic
+#- Faster speeds but equal accuracy
+#- Way to interpret values and use them for other modules
+#   - Possibly a separate function with a built in dictionary of sorts.
+#   - Possibly have to find a way to transform random characters into a readable english word. For example if the OCR reads "H3LL0", than interpret as "HELLO". Though maybe only for relevant words like "Room", numbers and "Bathroom" etc.
+#- Implement this fully into the program(Likely change main() into a return function and then use it else where, though interpretation is required.)
+######################################
 import time
 import cv2
 import easyocr
