@@ -11,5 +11,7 @@ dependencies = [
     "ultralytics>=8.4.26",
     "opencv-python<=4.11.0.86",
     "matplotlib>=3.10.9",
+    "soundfile>=0.13.1",
+    "sounddevice>=0.5.5",
 ]
 
