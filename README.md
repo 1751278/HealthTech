@@ -86,6 +86,20 @@ Utility for collecting training images. Opens a live camera feed; press **Space*
 
 ### Install Dependencies
 
+We recommend using **uv** to manage dependencies. It will install Python automatically if you don't have it.
+
+**1. Install uv** (run in PowerShell):
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+Full installation guide: https://docs.astral.sh/uv/getting-started/installation/
+
+**2. Install dependencies:**
+```bash
+uv pip install torch torchvision opencv-python ultralytics easyocr matplotlib numpy
+```
+
+**Alternative (if you already have Python and pip):**
 ```bash
 pip install torch torchvision opencv-python ultralytics easyocr matplotlib numpy
 ```
