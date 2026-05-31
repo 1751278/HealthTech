@@ -2,6 +2,8 @@
 #Last Updated: 3/31/2026
 #Author: Ethan Chan March 21 2026
 #Description: This is the OCR module for HealthTech. It uses EasyOCR to read text from images. The current implementation reads from a static image, but it can be modified to read from a video feed or camera input in the future.
+#USAGE: This is a demo script
+#KEY BINDS: 0 to exit
 ###########
 
 import time
@@ -40,8 +42,8 @@ def main():
         cv2.putText(img, text, (top_left[0]-20, top_left[1]), fontFace = cv2.FONT_ITALIC, fontScale = 0.5, color = (0, 0, 255), thickness = 1) #CV2 uses BGR
 
     
-    print(f"\n Model load time: {model_load_time - model_start_time}s")
-    print(f"Model prediction time: {model_prediction_time - model_start_prediction_time}s \n")
+    print(f"\n Model load time: {model_load_time - model_start_time}s") #How long did it take to get the model ready?
+    print(f"Model prediction time: {model_prediction_time - model_start_prediction_time}s \n") #How long did it take to predict?
 
     print("New window opened...")
     cv2.imshow("OCR Result", img)

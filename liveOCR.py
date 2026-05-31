@@ -27,7 +27,7 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 480)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 640)
 
-    cur_time = time.perf_counter()
+    cur_time = time.perf_counter() # DEBUG
     while True:
         prev_time = cur_time
         cur_time = time.perf_counter()
