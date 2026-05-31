@@ -136,3 +136,5 @@ The YOLO model weights (`doorFrameModel.pt`, `doorFrameModel1.pt`, `yolov11n.pt`
 | Ethan Chan | `OCR.py` |
 | Gurveer Minhas | `vo_mapper.py` |
 | Sahir Abrar | `navigation.py` |
+| Ritesh Phuyal | `OCR.py`, `collectData.py` |
+| Mustafa Ahmed | `collectData.py` |
