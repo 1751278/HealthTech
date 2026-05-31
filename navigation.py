@@ -16,7 +16,9 @@ import cv2
 import torch
 import numpy as np
 import matplotlib
- 
+import soundfile as sf
+import sounddevice as sd
+
 sys.path.append('./Depth-Anything-V2')
 from depth_anything_v2.dpt import DepthAnythingV2
 from ultralytics import YOLO
@@ -38,6 +40,11 @@ FRAME_WIDTH      = 480
 FRAME_HEIGHT     = 640
 DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
  
+# --- Audio ---
+AUDIO_FORWARD = "SoundAssets/forward.wav"
+AUDIO_LEFT    = "SoundAssets/left.wav"
+AUDIO_RIGHT   = "SoundAssets/right.wav"
+
 # --- Processing intervals (run every N frames) ---
 DEFAULT_YOLO_INTERVAL  = 8
 DEFAULT_DEPTH_INTERVAL = 3
@@ -214,7 +221,7 @@ def navigate():
     
     """
     # Note: If Camo studio is not open, you may need to change source to (source - 1)
-    cap = cv2.VideoCapture(source)
+    cap = cv2.VideoCapture(source-1)
     if not cap.isOpened():
         print("webcam not found")
         exit()
@@ -272,7 +279,17 @@ Pressing 'q' exits the loop and releases the camera.
             # consecutive frames agree on it.
             vote_buffer.append(raw_steer)
             if len(vote_buffer) == HYSTERESIS_FRAMES and len(set(vote_buffer)) == 1:
+                if committed_steer != raw_steer:
+                    print(f"Steering change: {committed_steer} -> {raw_steer}")
+                    data, sr = sf.read(AUDIO_FORWARD) # default to forward sound
+
+                    if raw_steer == "TURN LEFT <<":
+                        data, sr = sf.read(AUDIO_LEFT)
+                    elif raw_steer == ">> TURN RIGHT":
+                        data, sr = sf.read(AUDIO_RIGHT)
+                    sd.play(data[sr:],sr)
                 committed_steer = raw_steer
+                
             
 
             # then inside the loop, just index into it
