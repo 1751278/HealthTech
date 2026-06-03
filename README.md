@@ -12,7 +12,10 @@ HealthTech uses a phone or webcam as the primary sensor and runs several AI mode
 - **Door detection** — detects door frames using a custom-trained YOLO model to help navigate to exits
 - **Text reading** — reads signs and labels in the environment using OCR
 - **Live mapping** — builds a 2D top-down map of the user's path using visual odometry
+---
 
+Example Image:
+![Example](READMEAssets/Demo.png)
 ---
 
 ## Project Structure
