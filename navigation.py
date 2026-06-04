@@ -18,6 +18,7 @@ import numpy as np
 import matplotlib
 import soundfile as sf
 import sounddevice as sd
+import math
 
 sys.path.append('./Depth-Anything-V2')
 import os
@@ -208,8 +209,40 @@ def get_steer(depth_uint8):
     else:
         steer = ">> TURN RIGHT"
  
-    print(steer)
+    #print(steer)
     return steer, col, stats
+# figure out the minimum magnitude to move left right foward
+def get_better_steer(depth_uint8):
+    # Get zone stats and column averages
+    stats, col = get_zone_stats(depth_uint8)
+    # Debug printout of all zone values. Commented out by default.
+    """
+    if DEBUG_ZONES: 
+        print(
+            f"L={col['l']:.1f}  C={col['c']:.1f}  R={col['r']:.1f}  |  "
+            f"tl_avg={stats['tl']['avg']:.0f} tc_avg={stats['tc']['avg']:.0f} tr_avg={stats['tr']['avg']:.0f}  "
+            f"bl_avg={stats['bl']['avg']:.0f} bc_avg={stats['bc']['avg']:.0f} br_avg={stats['br']['avg']:.0f}  |  "
+            f"tl_max={stats['tl']['max']:.0f} tc_max={stats['tc']['max']:.0f} tr_max={stats['tr']['max']:.0f}  "
+            f"bl_max={stats['bl']['max']:.0f} bc_max={stats['bc']['max']:.0f} br_max={stats['br']['max']:.0f}",
+            end="  ->  "
+        )
+    """
+    # Calculate the differences
+    left_diff = col['l'] - col['r'] # larger positive means go right 
+    right_diff = col['r'] - col['l'] # larger positive means go left
+    forward_prob = col['c']
+
+    const = 0.5
+    direction = left_diff * const
+    if forward_prob > 50:
+        direction += forward_prob * const
+
+    direction = max(direction, -90)
+    direction = min(direction, 90)
+    print(f"Direction: {direction:.1f} degrees Forward Prob: {forward_prob:.1f}")
+    return direction
+    
+    
  
 # =============================================================================
 # MAIN LOOP
@@ -276,6 +309,7 @@ Pressing 'q' exits the loop and releases the camera.
              
             # raw_steer is the new candidate direction based on current depth map, col is the dict of weighted column averages, and stats is the dict of all zone stats.
             raw_steer, col, stats = get_steer(depth_uint8) 
+            direction = get_better_steer(depth_uint8)
  
             # Hysteresis: only commit to a new direction after HYSTERESIS_FRAMES
             # consecutive frames agree on it.
@@ -317,6 +351,10 @@ Pressing 'q' exits the loop and releases the camera.
         # draw steering label
         cv2.putText(frame, committed_steer, (w//2 - 90, h - 15),
                     cv2.FONT_HERSHEY_SIMPLEX, STEER_FONT_SCALE, STEER_COLOR, STEER_THICKNESS)
+        
+        start_point = (w//2, h//2)  # bottom center of the frame
+        end_point = (int(math.sin(math.radians(direction)) * 100 + w//2), int(-math.cos(math.radians(direction)) * 100 + h//2))
+        cv2.arrowedLine(frame, start_point, end_point, (0, 255, 0), 2)
  
         # display camera frame and depth side by side
         out = np.hstack([frame, depth_color]) if depth_color is not None else frame
