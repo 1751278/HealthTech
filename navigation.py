@@ -1,7 +1,7 @@
 #################
 # navigation.py
 # Created by Sahir Abrar May 28 2026
-# Last Updated: May 30 2026 by Sahir Abrar
+# Last Updated: June 4 2026 by Kenshi and Ethan
 # Description: This module captures video from a camera, runs depth estimation and tells the user to navigate to the door.
 # TODO:
 # - Use NCNN TFlight model for depth estimation (faster/more efficient than current DPT)
@@ -209,9 +209,9 @@ def get_steer(depth_uint8):
     else:
         steer = ">> TURN RIGHT"
  
-    #print(steer)
+    print(steer)
     return steer, col, stats
-# figure out the minimum magnitude to move left right foward
+# figure out the angle to go based on the same zone stats. This is a more continuous value that can be used to draw an arrow or something, rather than discrete labels.
 def get_better_steer(depth_uint8):
     # Get zone stats and column averages
     stats, col = get_zone_stats(depth_uint8)
@@ -229,15 +229,15 @@ def get_better_steer(depth_uint8):
     """
     # Calculate the differences
     left_diff = col['l'] - col['r'] # larger positive means go right 
-    right_diff = col['r'] - col['l'] # larger positive means go left
+    right_diff = col['r'] - col['l'] # larger positive means go left(dont really need this)
     forward_prob = col['c']
 
-    const = 0.5
-    direction = left_diff * const
-    if forward_prob > 50:
-        direction += forward_prob * const
+    const = 0.5#adjust for sensitivity
+    direction = left_diff * const#Only taking edge of image to calculate direction (still goes foward if center blocked)
+    if forward_prob > 100:
+        direction += forward_prob * const#If center blocked, go more right based on how blocked it is.
 
-    direction = max(direction, -90)
+    direction = max(direction, -90)# caps angle
     direction = min(direction, 90)
     print(f"Direction: {direction:.1f} degrees Forward Prob: {forward_prob:.1f}")
     return direction
@@ -309,6 +309,7 @@ Pressing 'q' exits the loop and releases the camera.
              
             # raw_steer is the new candidate direction based on current depth map, col is the dict of weighted column averages, and stats is the dict of all zone stats.
             raw_steer, col, stats = get_steer(depth_uint8) 
+
             direction = get_better_steer(depth_uint8)
  
             # Hysteresis: only commit to a new direction after HYSTERESIS_FRAMES
@@ -353,8 +354,8 @@ Pressing 'q' exits the loop and releases the camera.
                     cv2.FONT_HERSHEY_SIMPLEX, STEER_FONT_SCALE, STEER_COLOR, STEER_THICKNESS)
         
         start_point = (w//2, h//2)  # bottom center of the frame
-        end_point = (int(math.sin(math.radians(direction)) * 100 + w//2), int(-math.cos(math.radians(direction)) * 100 + h//2))
-        cv2.arrowedLine(frame, start_point, end_point, (0, 255, 0), 2)
+        end_point = (int(math.sin(math.radians(direction)) * 100 + w//2), int(-math.cos(math.radians(direction)) * 100 + h//2))#dont get confused on sin and cos
+        cv2.arrowedLine(frame, start_point, end_point, (0, 255, 0), 2)# draws an arrow
  
         # display camera frame and depth side by side
         out = np.hstack([frame, depth_color]) if depth_color is not None else frame
