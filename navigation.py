@@ -37,7 +37,7 @@ DEPTH_FEATURES     = 64
 DEPTH_OUT_CHANNELS = [48, 96, 192, 384]
  
 # --- Capture ---
-DEFAULT_SOURCE   = '1'    # Camera index or file path
+DEFAULT_SOURCE   = '0'    # Camera index or file path
 FRAME_WIDTH      = 480
 FRAME_HEIGHT     = 640
 DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
@@ -235,7 +235,10 @@ def get_better_steer(depth_uint8):
     const = 0.5  # adjust for sensitivity
     direction = left_diff * const  # only taking edge of image to calculate direction (still goes forward if center blocked)
     if forward_prob > 100:
-        direction += forward_prob * const  # if center blocked, go more right based on how blocked it is
+        if direction > 0:
+            direction += forward_prob * const
+        else:
+            direction -= forward_prob * const#If center blocked, go more right based on how blocked it is.
 
     direction = max(direction, -90)  # caps angle
     direction = min(direction, 90)
