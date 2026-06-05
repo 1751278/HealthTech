@@ -11,6 +11,7 @@
 import argparse
 import sys
 import collections
+import threading
 import cv2
 import torch
 import numpy as np
@@ -18,6 +19,7 @@ import matplotlib
 import soundfile as sf
 import sounddevice as sd
 import math
+import time
 
 sys.path.append('./Depth-Anything-V2')
 import os
@@ -37,7 +39,7 @@ DEPTH_FEATURES     = 64
 DEPTH_OUT_CHANNELS = [48, 96, 192, 384]
  
 # --- Capture ---
-DEFAULT_SOURCE   = '0'    # Camera index or file path
+DEFAULT_SOURCE   = '1'    # Camera index or file path
 FRAME_WIDTH      = 480
 FRAME_HEIGHT     = 640
 DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
@@ -211,6 +213,10 @@ def get_steer(depth_uint8):
     print(steer)
     return steer, col, stats
 
+def on_timeout():
+    ended = True
+timer = threading.Timer(0.1, on_timeout)
+
 
 # figure out the angle to go based on the same zone stats. This is a more continuous value that can be used to draw an arrow or something, rather than discrete labels.
 def get_better_steer(depth_uint8):
@@ -232,16 +238,48 @@ def get_better_steer(depth_uint8):
     left_diff = col['l'] - col['r'] # larger positive means go right
     forward_prob = col['c']
 
-    const = 0.5  # adjust for sensitivity
-    direction = left_diff * const  # only taking edge of image to calculate direction (still goes forward if center blocked)
-    if forward_prob > 100:
+    const_dir = 0.8  # adjust for sensitivity
+    const_foward = 0.7
+    direction = left_diff * const_dir  # only taking edge of image to calculate direction (still goes forward if center blocked)
+    if forward_prob > 200:
         if direction > 0:
-            direction += forward_prob * const
+            direction += forward_prob * const_foward #If center blocked, go more left based on how blocked it is.
         else:
-            direction -= forward_prob * const#If center blocked, go more right based on how blocked it is.
+            direction -= forward_prob * const_foward#If center blocked, go more right based on how blocked it is.
 
     direction = max(direction, -90)  # caps angle
     direction = min(direction, 90)
+    frequency = 440.0   # Frequency in Hz
+    duration = 0.1      # Duration in seconds
+    samplerate = 44100  # Samples per second
+    volume = abs(direction)/90        # Volume (0.0 to 1.0)
+    ##################################### sound stuff
+    # Generate time array
+    t = np.linspace(0, duration, int(samplerate * duration), endpoint=False)
+
+    # Generate the sine wave
+    wave = volume * np.sin(2 * np.pi * frequency * t)
+
+    # Create a stereo array (2 channels: Left, Right)
+    # Shape will be (N, 2)
+    stereo_wave_left = np.zeros((len(wave), 2))
+    stereo_wave_right = np.zeros((len(wave), 2))
+
+    # Put the wave in the LEFT ear (channel 0)
+    # To play in the RIGHT ear instead, change stereo_wave[:, 0] to stereo_wave[:, 1]
+    stereo_wave_left[:, 0] = wave
+    stereo_wave_right[:, 1] = wave
+    if direction > 0:
+        #sd.play(stereo_wave_left, samplerate)
+        #time.sleep(duration)  # wait for sound to finish before playing next one
+        #sd.stop()
+        pass
+    else:
+        #sd.play(stereo_wave_right, samplerate)
+        #time.sleep(duration)  # wait for sound to finish before playing next one
+        sd.stop()
+        pass
+
     print(f"Direction: {direction:.1f} degrees Forward Prob: {forward_prob:.1f}")
     return direction
 
@@ -349,12 +387,14 @@ def navigate():
                     print(f"Steering change: {committed_steer} -> {raw_steer}")
 
                     # FIX: play audio from the start of the file, not 1 second in
-                    data, sr = sf.read(AUDIO_FORWARD)  # default to forward sound
+                    #data, sr = sf.read(AUDIO_FORWARD)  # default to forward sound
                     if raw_steer == "TURN LEFT <<":
-                        data, sr = sf.read(AUDIO_LEFT)
+                        #data, sr = sf.read(AUDIO_LEFT)
+                        pass
                     elif raw_steer == ">> TURN RIGHT":
-                        data, sr = sf.read(AUDIO_RIGHT)
-                    sd.play(data, sr)
+                        #data, sr = sf.read(AUDIO_RIGHT)
+                        pass
+                    #sd.play(data, sr)
 
                 committed_steer = raw_steer
 
