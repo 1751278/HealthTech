@@ -1,17 +1,17 @@
 #################
 # navigation.py
 # Created by Sahir Abrar May 28 2026
-# Last Updated: June 4 2026 by Sahir Abrar
+# Last Updated: June 6 2026 by Sahir Abrar & Kenshi
 # Description: This module captures video from a camera, runs depth estimation and tells the user to navigate to the door.
 # TODO:
 # - Use NCNN TFlight model for depth estimation (faster/more efficient than current DPT)
 # - Add text-to-speech output
+# - make the sound non-blocking because we're using the sleep function to wait for the sound to finish, which is not ideal. We should be able to play the sound asynchronously so it doesn't block the main loop.
 #################
  
 import argparse
 import sys
 import collections
-import threading
 import cv2
 import torch
 import numpy as np
@@ -19,7 +19,6 @@ import matplotlib
 import soundfile as sf
 import sounddevice as sd
 import math
-import time
 
 sys.path.append('./Depth-Anything-V2')
 import os
@@ -48,11 +47,27 @@ DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
 AUDIO_FORWARD = "SoundAssets/forward.wav"
 AUDIO_LEFT    = "SoundAssets/left.wav"
 AUDIO_RIGHT   = "SoundAssets/right.wav"
+# Audio params for non-blocking sounds
+sample_rate = 44100
+phase = 0.0
+
+# Shared state that the main loop can modify dynamically
+audio_state = {
+    "left_freq": 440.0,
+    "right_freq": 440.0,
+    "left_vol": 0.0,  
+    "right_vol": 0.0  
+}
 
 # --- Processing intervals (run every N frames) ---
 DEFAULT_YOLO_INTERVAL  = 8
 DEFAULT_DEPTH_INTERVAL = 3
  
+#Params for the better_steer function
+STEER_SENSITIVITY = 0.5  # how strongly the direction responds to left-right differences
+BLOCKED_SENSITIVITY = 0.7 # how much the direction should be adjusted when the center is blocked
+BLOCKED_THRESHOLD = 200   # above this center value, consider the forward path blocked and move away
+
 # --- Zone weights ---
 # Bottom zones are weighted more heavily than top zones because
 # obstacles at foot level are more immediately dangerous.
@@ -213,9 +228,6 @@ def get_steer(depth_uint8):
     print(steer)
     return steer, col, stats
 
-def on_timeout():
-    ended = True
-timer = threading.Timer(0.1, on_timeout)
 
 
 # figure out the angle to go based on the same zone stats. This is a more continuous value that can be used to draw an arrow or something, rather than discrete labels.
@@ -238,50 +250,52 @@ def get_better_steer(depth_uint8):
     left_diff = col['l'] - col['r'] # larger positive means go right
     forward_prob = col['c']
 
-    const_dir = 0.8  # adjust for sensitivity
-    const_foward = 0.7
+    const_dir = STEER_SENSITIVITY  # adjust for sensitivity
+    const_foward = BLOCKED_SENSITIVITY
     direction = left_diff * const_dir  # only taking edge of image to calculate direction (still goes forward if center blocked)
-    if forward_prob > 200:
+    if forward_prob > BLOCKED_THRESHOLD:  # if center is blocked, adjust direction to turn more aggressively toward the clearer side
         if direction > 0:
             direction += forward_prob * const_foward #If center blocked, go more left based on how blocked it is.
         else:
             direction -= forward_prob * const_foward#If center blocked, go more right based on how blocked it is.
+    
+    direction = max(-90, min(90, direction))  # clamp to [-90, 90]
 
-    direction = max(direction, -90)  # caps angle
-    direction = min(direction, 90)
-    frequency = 440.0   # Frequency in Hz
-    duration = 0.1      # Duration in seconds
-    samplerate = 44100  # Samples per second
-    volume = abs(direction)/90        # Volume (0.0 to 1.0)
-    ##################################### sound stuff
-    # Generate time array
-    t = np.linspace(0, duration, int(samplerate * duration), endpoint=False)
-
-    # Generate the sine wave
-    wave = volume * np.sin(2 * np.pi * frequency * t)
-
-    # Create a stereo array (2 channels: Left, Right)
-    # Shape will be (N, 2)
-    stereo_wave_left = np.zeros((len(wave), 2))
-    stereo_wave_right = np.zeros((len(wave), 2))
-
-    # Put the wave in the LEFT ear (channel 0)
-    # To play in the RIGHT ear instead, change stereo_wave[:, 0] to stereo_wave[:, 1]
-    stereo_wave_left[:, 0] = wave
-    stereo_wave_right[:, 1] = wave
     if direction > 0:
-        #sd.play(stereo_wave_left, samplerate)
-        #time.sleep(duration)  # wait for sound to finish before playing next one
-        #sd.stop()
-        pass
+        audio_state["left_vol"] = 0.0
+        audio_state["right_vol"] = abs(direction)/90.0 # scale volume by how strong the turn is
     else:
-        #sd.play(stereo_wave_right, samplerate)
-        #time.sleep(duration)  # wait for sound to finish before playing next one
-        sd.stop()
-        pass
+        audio_state["right_vol"] = 0.0
+        audio_state["left_vol"] = abs(direction)/90.0 # scale volume by how strong the turn is
 
     print(f"Direction: {direction:.1f} degrees Forward Prob: {forward_prob:.1f}")
     return direction
+# function for non-blocking audio playback using sounddevice's callback mechanism
+def audio_callback(outdata, frames, time_info, status):
+    """Background thread that reads the audio_state and generates the sound."""
+    global phase
+    if status:
+        print(status)
+        
+    # Read the current values from our shared dictionary
+    f_left = audio_state["left_freq"]
+    f_right = audio_state["right_freq"]
+    v_left = audio_state["left_vol"]
+    v_right = audio_state["right_vol"]
+    
+    # Create the time array for this chunk
+    t = (np.arange(frames) + phase) / sample_rate
+    
+    # Generate the waves and multiply by their respective volumes
+    left_side = np.sin(2 * np.pi * f_left * t) * v_left
+    right_side = np.sin(2 * np.pi * f_right * t) * v_right
+    
+    # Write to the output channels
+    outdata[:, 0] = left_side
+    outdata[:, 1] = right_side
+    
+    # Keep the wave continuous
+    phase += frames
 
 
 # =============================================================================
@@ -455,4 +469,8 @@ def navigate():
     return {"frames_processed": frame_num, "exit_reason": exit_reason}
  
 # calling the function
-navigate()
+if __name__ == "__main__":
+    #starts callback audio stream for non-blocking sound playback
+    stream = sd.OutputStream(channels=2, callback=audio_callback, samplerate=sample_rate)
+    with stream:
+        navigate()
