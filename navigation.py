@@ -1,12 +1,13 @@
 #################
 # navigation.py
 # Created by Sahir Abrar May 28 2026
-# Last Updated: June 6 2026 by Sahir Abrar & Kenshi
+# Last Updated: June 8 2026 by Kenshi & Ethan
 # Description: This module captures video from a camera, runs depth estimation and tells the user to navigate to the door.
 # TODO:
 # - Use NCNN TFlight model for depth estimation (faster/more efficient than current DPT)
 # - Add text-to-speech output
 # - make the sound non-blocking because we're using the sleep function to wait for the sound to finish, which is not ideal. We should be able to play the sound asynchronously so it doesn't block the main loop.
+# - Need to combine door path and avoidance path for guidance to the door
 #################
  
 import argparse
@@ -60,10 +61,11 @@ audio_state = {
 }
 
 # --- Processing intervals (run every N frames) ---
-DEFAULT_YOLO_INTERVAL  = 8
+DEFAULT_YOLO_INTERVAL  = 3
 DEFAULT_DEPTH_INTERVAL = 3
  
 #Params for the better_steer function
+STEER_SENSITIVITY_DOOR = 0.5 # how strongly the direction responds to left-right differences when steering toward a door
 STEER_SENSITIVITY = 0.5  # how strongly the direction responds to left-right differences
 BLOCKED_SENSITIVITY = 0.7 # how much the direction should be adjusted when the center is blocked
 BLOCKED_THRESHOLD = 200   # above this center value, consider the forward path blocked and move away
@@ -298,25 +300,25 @@ def audio_callback(outdata, frames, time_info, status):
     phase += frames
 
 
+def get_door_steer(box, frame_width, yolo_names, thresh=0.2):
+    # gets straight line steering to the door
+    print(box.conf.item())
+    if box.conf.item() > thresh:
+        x1, y1, x2, y2 = map(int, box.xyxy[0])
+        center = (int((x1+x2)/2), int((y1+y2)/2))
+        direction = -(frame_width/2 - center[0])*STEER_SENSITIVITY_DOOR # positive if door is on the left, negative if on the right
+        direction = max(-90, min(90, direction))  # clamp to [-90, 90]
+        global last_door_direction
+        last_door_direction = direction
+        return direction
+    if last_door_direction is not None:
+        return last_door_direction
+    return 90
 # =============================================================================
 # MAIN LOOP
 # =============================================================================
+        
 
-def get_door_steer(boxes, frame_width, yolo_names):
-    """Return 'left', 'center', or 'right' based on door box position, or None if no door detected."""
-    for box in boxes:
-        label = yolo_names[int(box.cls[0])]
-        if 'door' in label:
-            x1, x2 = int(box.xyxy[0][0]), int(box.xyxy[0][2])
-            cx = (x1 + x2) / 2
-            third = frame_width / 3
-            if cx < third:
-                return 'left'
-            elif cx > 2 * third:
-                return 'right'
-            else:
-                return 'center'
-    return None
 
 
 def navigate():
@@ -341,6 +343,9 @@ def navigate():
 
     # FIX: initialize direction so the arrow doesn't crash before depth runs
     direction = 0.0
+    #last door frame bbox
+    global last_door_direction
+    last_door_direction = 90 # default to right if we haven't seen a door yet
 
     # Initialize smoothed depth for visualization (not used in steering)
     smoothed_depth = None
@@ -423,6 +428,7 @@ def navigate():
             results = yolo(frame, verbose=False)
             boxes   = results[0].boxes
 
+            """
             # FIX: use get_door_steer to bias committed_steer toward the door when one is visible
             door_side = get_door_steer(boxes, w, yolo.names)
             if door_side is not None:
@@ -433,23 +439,38 @@ def navigate():
                 elif door_side == 'center':
                     committed_steer = "^ FORWARD"
                 print(f"Door detected on {door_side}, overriding steer to: {committed_steer}")
+            """
  
         # --- Draw Frame ---
-        for box in boxes:
+        max_conf = 0
+        index = -1
+        for i, box in enumerate(boxes):
             label           = yolo.names[int(box.cls[0])]
             x1, y1, x2, y2 = map(int, box.xyxy[0])  # bounding box coordinates
             color           = BOX_COLOR_DOOR if 'door' in label else BOX_COLOR_OTHER
+            conf = box.conf.item()
+            if conf > max_conf:
+                max_conf = conf
+                index = i
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)  # draw box
             cv2.putText(frame, label, (x1, y1 - 5),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)  # draw label
  
+        #Get straghtline steering to the door if one is detected with high confidence
+        if index != -1:
+            door_direction = get_door_steer(boxes[index], w, yolo.names)
+        else:
+            door_direction = last_door_direction  # keep going toward the last known door direction if we lose sight of it
         # draw steering label
         cv2.putText(frame, committed_steer, (w//2 - 90, h - 15),
                     cv2.FONT_HERSHEY_SIMPLEX, STEER_FONT_SCALE, STEER_COLOR, STEER_THICKNESS)
         
         start_point = (w//2, h//2)
         end_point = (int(math.sin(math.radians(direction)) * 100 + w//2), int(-math.cos(math.radians(direction)) * 100 + h//2))
-        cv2.arrowedLine(frame, start_point, end_point, (0, 255, 0), 2)  # draws an arrow
+        cv2.arrowedLine(frame, start_point, end_point, (0, 255, 0), 2)  # draw green arrow for avoidance direction
+        start_point = (w//2, h//2)
+        end_point = (int(math.sin(math.radians(door_direction)) * 100 + w//2), int(-math.cos(math.radians(door_direction)) * 100 + h//2))
+        cv2.arrowedLine(frame, start_point, end_point, (0, 0, 255), 2)  # draws red arrow for door direction
  
         # display camera frame and depth side by side
         out = np.hstack([frame, depth_color]) if depth_color is not None else frame
