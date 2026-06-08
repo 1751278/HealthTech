@@ -1,3 +1,11 @@
+######################################
+# liveOCR.py
+# Created by Kenshi Kadarusman April 1 2026
+# Last Updated: ?
+#Comments: This is the live OCR module for HealthTech. It uses EasyOCR to read text from a live camera feed. The current implementation displays the detected text on the video feed, but it can be modified to return the detected text for further processing in the future.
+#Notes:
+#- May have to change cv2.VideoCapture(1) to cv2.VideoCapture(0) depending on the system. If you have multiple cameras, you may have to change the number to find the correct one.
+######################################
 import time
 import cv2
 import easyocr
@@ -9,23 +17,23 @@ def main():
     ocr = easyocr.Reader(['en'], gpu=True, quantize=True) # this is the OCR reader, it takes a list of languages to read. In this case, it's set to English. It can be modified to read other languages if needed.
     THRESH = 0.50 #probability threshhold for displaying prediction
 
-    cap = cv2.VideoCapture(0)#Change to zero if not working
+    cap = cv2.VideoCapture(1)#Change to zero if not working
     if not cap.isOpened():
         print("Failed to open webcam. Exiting.")
         return
-
+ 
     print("Webcam initialized. Starting video stream loop.")
 
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 480)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 640)
 
-    cur_time = time.perf_counter()
+    cur_time = time.perf_counter() # DEBUG
     while True:
         prev_time = cur_time
         cur_time = time.perf_counter()
         success, frame = cap.read()
 
-        #frame = cv2.resize(frame, (360, 640))#vertical phone resolution
+        frame = cv2.resize(frame, (360, 640))#vertical phone resolution
         if not success:
             print("Failed to grab frame. Exiting loop.")
             break

@@ -1,3 +1,11 @@
+######################################
+# yolo.py
+# Created by Rishan Reddy March 24 2026
+# Last Updated: ?
+#Comments: This is the YOLO object detection module for HealthTech. It uses YOLOv8 to detect objects in a live camera feed. The current implementation displays the detected objects on the video feed, but it can be modified to return the detected objects for further processing in the future.
+#Notes:
+#- May need to change cv2.VideoCapture(1) to cv2.VideoCapture(0) depending on the system. If you have multiple cameras, you may have to change the number to find the correct one.
+######################################
 import cv2
 from ultralytics import YOLO
 import logging
@@ -14,13 +22,13 @@ def run_object_detection():
     logging.info("Starting YOLO object detection application.")
 
     try:
-        model = YOLO("YoloModels/yolov11n.pt")
+        model = YOLO("YoloModels/doorFrameModel1.pt")
         logging.info("YOLOv11n model loaded successfully.")
     except Exception as e:
         logging.error(f"Error loading YOLO model: {e}")
         return
 
-    cap = cv2.VideoCapture(0)#Change to zero if not working
+    cap = cv2.VideoCapture(1)#Change to zero if not working
     if not cap.isOpened():
         logging.error("Failed to open webcam. Exiting.")
         return
@@ -32,7 +40,7 @@ def run_object_detection():
 
     while True:
         success, frame = cap.read()
-        frame = cv2.resize(frame, (640, 480))#vertical phone resolution
+        frame = cv2.resize(frame, (360, 640))#vertical phone resolution
         if not success:
             logging.warning("Failed to grab frame. Exiting loop.")
             break
