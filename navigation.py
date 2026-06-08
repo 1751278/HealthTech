@@ -2,12 +2,14 @@
 # navigation.py
 # Created by Sahir Abrar May 28 2026
 # Last Updated: June 8 2026 by Kenshi & Ethan
+# Last Change:
+# - Added a not annoying sound.
 # Description: This module captures video from a camera, runs depth estimation and tells the user to navigate to the door.
 # TODO:
 # - Use NCNN TFlight model for depth estimation (faster/more efficient than current DPT)
 # - Add text-to-speech output
-# - make the sound non-blocking because we're using the sleep function to wait for the sound to finish, which is not ideal. We should be able to play the sound asynchronously so it doesn't block the main loop.
 # - Need to combine door path and avoidance path for guidance to the door
+# - Change song please... Or maybe some way to allow user to change it themselves
 #################
  
 import argparse
@@ -45,9 +47,9 @@ FRAME_HEIGHT     = 640
 DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
  
 # --- Audio ---
-AUDIO_FORWARD = "SoundAssets/forward.wav"
-AUDIO_LEFT    = "SoundAssets/left.wav"
-AUDIO_RIGHT   = "SoundAssets/right.wav"
+print("loading audio... check the constants section to change the sound file. MB if it is bad. I just searched no copyright music")
+AUDIO_DATA, SAMPLE_RATE = sf.read("SoundAssets/music.wav") #CHANGE THIS FOR DIFFERENT SOUND, I FOUND THIS ONLINE IM SORRY
+audio_location = 0  # current position in the audio file (in samples)
 # Audio params for non-blocking sounds
 sample_rate = 44100
 phase = 0.0
@@ -275,29 +277,40 @@ def get_better_steer(depth_uint8):
 # function for non-blocking audio playback using sounddevice's callback mechanism
 def audio_callback(outdata, frames, time_info, status):
     """Background thread that reads the audio_state and generates the sound."""
-    global phase
+    #global phase
+    global audio_location
     if status:
         print(status)
         
     # Read the current values from our shared dictionary
-    f_left = audio_state["left_freq"]
-    f_right = audio_state["right_freq"]
+    #f_left = audio_state["left_freq"]
+    #f_right = audio_state["right_freq"]
     v_left = audio_state["left_vol"]
     v_right = audio_state["right_vol"]
     
     # Create the time array for this chunk
-    t = (np.arange(frames) + phase) / sample_rate
-    
-    # Generate the waves and multiply by their respective volumes
-    left_side = np.sin(2 * np.pi * f_left * t) * v_left
-    right_side = np.sin(2 * np.pi * f_right * t) * v_right
+    t = (np.arange(frames) + audio_location) % len(AUDIO_DATA) #the len(AUDIO_DATA) part makes it loop
+
+
+    #Takes a small "chunk" (hence the name chunk :D) of the audio file
+    chunk = AUDIO_DATA[t]
+
+    #convert stereo -> mono, Stereo being that it plays on multiple audio channels, mono only playing in one channel (I am not audio expert)
+    #If your audio is not stereo, then prob comment it out or something idk.
+    mono = chunk.mean(axis=1) #Axis one basically averages out along the channels
+    # Takes the audio data and multiplies it by a volume factor
+    left_side = mono * v_left
+    right_side = mono * v_right
     
     # Write to the output channels
     outdata[:, 0] = left_side
     outdata[:, 1] = right_side
     
+    # Update the audio location (Basically just phase but renamed, didn't realize that this is basically the same thing :/)
+    audio_location = (audio_location + frames) % len(AUDIO_DATA)
+    
     # Keep the wave continuous
-    phase += frames
+    #phase += frames
 
 
 def get_door_steer(box, frame_width, yolo_names, thresh=0.2):
