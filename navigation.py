@@ -42,7 +42,7 @@ DEPTH_OUT_CHANNELS = [48, 96, 192, 384]
  
 # --- Capture ---
 DEFAULT_SOURCE   = '1'    # Camera index or file path
-FRAME_WIDTH      = 480
+FRAME_WIDTH      = 360
 FRAME_HEIGHT     = 640
 DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
  
@@ -63,14 +63,14 @@ audio_state = {
 }
 
 # --- Processing intervals (run every N frames) ---
-DEFAULT_YOLO_INTERVAL  = 3
+DEFAULT_YOLO_INTERVAL  = 1
 DEFAULT_DEPTH_INTERVAL = 3
  
 #Params for the better_steer function
 STEER_SENSITIVITY_DOOR = 0.5 # how strongly the direction responds to left-right differences when steering toward a door
-STEER_SENSITIVITY = 0.5  # how strongly the direction responds to left-right differences
+STEER_SENSITIVITY = 0.5  #  how strongly the direction responds to left-right differences
 BLOCKED_SENSITIVITY = 0.7 # how much the direction should be adjusted when the center is blocked
-BLOCKED_THRESHOLD = 200   # above this center value, consider the forward path blocked and move away
+BLOCKED_THRESHOLD = 150   # above this center value, consider the forward path blocked and move away
 
 # --- Zone weights ---
 # Bottom zones are weighted more heavily than top zones because
@@ -327,6 +327,8 @@ def get_door_steer(box, frame_width, yolo_names, thresh=0.2):
     if last_door_direction is not None:
         return last_door_direction
     return 90
+def combine_steer(obstacle_dir, door_dir, depth_uint8):
+     pass
 # =============================================================================
 # MAIN LOOP
 # =============================================================================
