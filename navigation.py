@@ -34,7 +34,7 @@ from ultralytics import YOLO
 # =============================================================================
  
 # --- Models ---
-YOLO_MODEL_PATH    = "YoloModels/doorFrameModel.pt" # Using the door frame model so we can try and help navigate Users to the door.
+YOLO_MODEL_PATH    = "YoloModels/doorFrameModel26.pt" # Using the door frame model so we can try and help navigate Users to the door.
 DEPTH_MODEL_PATH   = "depthmodels/depth_anything_v2_vits.pth"
 DEPTH_ENCODER      = 'vits'
 DEPTH_FEATURES     = 64
@@ -63,7 +63,7 @@ audio_state = {
 }
 
 # --- Processing intervals (run every N frames) ---
-DEFAULT_YOLO_INTERVAL  = 1
+DEFAULT_YOLO_INTERVAL  = 3
 DEFAULT_DEPTH_INTERVAL = 3
  
 #Params for the better_steer function
@@ -71,7 +71,10 @@ STEER_SENSITIVITY_DOOR = 0.5 # how strongly the direction responds to left-right
 STEER_SENSITIVITY = 0.5  #  how strongly the direction responds to left-right differences
 BLOCKED_SENSITIVITY = 0.7 # how much the direction should be adjusted when the center is blocked
 BLOCKED_THRESHOLD = 150   # above this center value, consider the forward path blocked and move away
-
+#Params for avoiding large objects
+OBJECT_AREA_THRESH_MAX = 150000 #above this value the object is just everything
+OBJECT_AREA_THRESH_MIN = 50000 #below this value the object is too small
+OBJECT_STEER_SENSITIVITY = 0.000001 #sensitivity of steering if large object detected
 # --- Zone weights ---
 # Bottom zones are weighted more heavily than top zones because
 # obstacles at foot level are more immediately dangerous.
@@ -229,7 +232,7 @@ def get_steer(depth_uint8):
     else:
         steer = ">> TURN RIGHT"
  
-    print(steer)
+    #print(steer)
     return steer, col, stats
 
 
@@ -272,7 +275,7 @@ def get_better_steer(depth_uint8):
         audio_state["right_vol"] = 0.0
         audio_state["left_vol"] = abs(direction)/90.0 # scale volume by how strong the turn is
 
-    print(f"Direction: {direction:.1f} degrees Forward Prob: {forward_prob:.1f}")
+    #print(f"Direction: {direction:.1f} degrees Forward Prob: {forward_prob:.1f}")
     return direction
 # function for non-blocking audio playback using sounddevice's callback mechanism
 def audio_callback(outdata, frames, time_info, status):
@@ -418,7 +421,7 @@ def navigate():
             vote_buffer.append(raw_steer)
             if len(vote_buffer) == HYSTERESIS_FRAMES and len(set(vote_buffer)) == 1:
                 if committed_steer != raw_steer:
-                    print(f"Steering change: {committed_steer} -> {raw_steer}")
+                    #print(f"Steering change: {committed_steer} -> {raw_steer}")
 
                     # FIX: play audio from the start of the file, not 1 second in
                     #data, sr = sf.read(AUDIO_FORWARD)  # default to forward sound
@@ -437,6 +440,46 @@ def navigate():
             
             # Resize depth frame for side-by-side display
             depth_color = cv2.resize(depth_color, (w, h))
+
+        ################################# Find contours
+        #convert depth map to binary
+        gray = cv2.cvtColor(depth_color, cv2.COLOR_BGR2GRAY)
+        #crop_gray = gray[FRAME_HEIGHT//3 : 2*FRAME_HEIGHT//3, 0 : FRAME_WIDTH]
+
+        _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
+
+        # 3. Find contours
+        # Returns a list of contours and their structural hierarchy
+        contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        max_contour = max(contours, key=cv2.contourArea)
+
+        # 3. Calculate its numerical area value (if needed)
+        max_area = cv2.contourArea(max_contour)
+        avg_x = np.mean(max_contour[:, 0, 0])
+        # 1. Create a black mask of the same size as your image
+        mask = np.zeros(frame.shape[:2], dtype="uint8")
+
+        # 2. Draw the filled contour on the mask
+        cv2.drawContours(mask, [max_contour], -1, 255, -1)
+
+        # 3. Calculate the average BGR color using the mask
+        avg_red = cv2.mean(frame, mask=mask)[2]
+
+        print(max_area)
+        #if max_area < OBJECT_AREA_THRESH_MAX and max_area > OBJECT_AREA_THRESH_MIN:
+        if avg_x < FRAME_WIDTH//2+75 and avg_x > FRAME_WIDTH//2-75:
+            pass
+        elif avg_x < FRAME_WIDTH//2: 
+            direction -= max_area * avg_red * OBJECT_STEER_SENSITIVITY
+            direction = max(-90, min(90, direction))  # clamp to [-90, 90]
+
+        else:
+            direction += max_area * avg_red * OBJECT_STEER_SENSITIVITY
+            direction = max(-90, min(90, direction))  # clamp to [-90, 90]
+            
+
+        cv2.drawContours(frame, contours, -1, (0, 255, 0), 2)
+        ##############################################
  
         # --- Object detection ---
         if frame_num % args.yolo_interval == 0:
@@ -476,9 +519,6 @@ def navigate():
             door_direction = get_door_steer(boxes[index], w, yolo.names)
         else:
             door_direction = last_door_direction  # keep going toward the last known door direction if we lose sight of it
-        # draw steering label
-        cv2.putText(frame, committed_steer, (w//2 - 90, h - 15),
-                    cv2.FONT_HERSHEY_SIMPLEX, STEER_FONT_SCALE, STEER_COLOR, STEER_THICKNESS)
         
         start_point = (w//2, h//2)
         end_point = (int(math.sin(math.radians(direction)) * 100 + w//2), int(-math.cos(math.radians(direction)) * 100 + h//2))

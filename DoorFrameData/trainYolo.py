@@ -2,7 +2,7 @@ from ultralytics import YOLO
 
 def main():
     # Load a pretrained model
-    model = YOLO("doorFrameModel1.pt") 
+    model = YOLO("yolo12n.pt") 
 
     # Train the model
     results = model.train(
