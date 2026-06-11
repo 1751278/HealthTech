@@ -34,7 +34,7 @@ from ultralytics import YOLO
 # =============================================================================
  
 # --- Models ---
-YOLO_MODEL_PATH    = "YoloModels/doorFrameModel26.pt" # Using the door frame model so we can try and help navigate Users to the door.
+YOLO_MODEL_PATH    = "YoloModels/DoorFrameModel26.pt" # Using the door frame model so we can try and help navigate Users to the door.
 DEPTH_MODEL_PATH   = "depthmodels/depth_anything_v2_vits.pth"
 DEPTH_ENCODER      = 'vits'
 DEPTH_FEATURES     = 64
@@ -443,18 +443,21 @@ def navigate():
 
         ################################# Find contours
         #convert depth map to binary
-        gray = cv2.cvtColor(depth_color, cv2.COLOR_BGR2GRAY)
-        #crop_gray = gray[FRAME_HEIGHT//3 : 2*FRAME_HEIGHT//3, 0 : FRAME_WIDTH]
+        gray =  cv2.cvtColor(depth_color, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
-        _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
+        # Canny output is inherently a binary image (edges are 255, background is 0)
+        _, binary = cv2.threshold(blurred, 127, 255, cv2.THRESH_BINARY_INV)
 
         # 3. Find contours
         # Returns a list of contours and their structural hierarchy
-        contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        max_contour = max(contours, key=cv2.contourArea)
-
-        # 3. Calculate its numerical area value (if needed)
-        max_area = cv2.contourArea(max_contour)
+        contours, hierarchy = cv2.findContours(binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            max_contour = max(contours, key=cv2.contourArea)
+            max_area = cv2.contourArea(max_contour)
+        else:
+            max_contour = contours[0]
+            max_area = cv2.contourArea(contours[0])
         avg_x = np.mean(max_contour[:, 0, 0])
         # 1. Create a black mask of the same size as your image
         mask = np.zeros(frame.shape[:2], dtype="uint8")
@@ -466,16 +469,27 @@ def navigate():
         avg_red = cv2.mean(frame, mask=mask)[2]
 
         print(max_area)
-        #if max_area < OBJECT_AREA_THRESH_MAX and max_area > OBJECT_AREA_THRESH_MIN:
+        #if large object in front of frame, turn away.  Also adds contour bias to steering
         if avg_x < FRAME_WIDTH//2+75 and avg_x > FRAME_WIDTH//2-75:
-            pass
+            if max_area < OBJECT_AREA_THRESH_MAX and max_area > OBJECT_AREA_THRESH_MIN and direction<15 and direction>-15:
+                if direction<0:
+                    direction += max_area * avg_red * OBJECT_STEER_SENSITIVITY
+                else:
+                    direction -= max_area * avg_red * OBJECT_STEER_SENSITIVITY
         elif avg_x < FRAME_WIDTH//2: 
             direction -= max_area * avg_red * OBJECT_STEER_SENSITIVITY
-            direction = max(-90, min(90, direction))  # clamp to [-90, 90]
-
         else:
             direction += max_area * avg_red * OBJECT_STEER_SENSITIVITY
-            direction = max(-90, min(90, direction))  # clamp to [-90, 90]
+            
+        direction = max(-90, min(90, direction))  # clamp to [-90, 90]
+        if direction > 0:
+            audio_state["left_vol"] = 0.0
+            audio_state["right_vol"] = abs(direction)/90.0 # scale volume by how strong the turn is
+        else:
+            audio_state["right_vol"] = 0.0
+            audio_state["left_vol"] = abs(direction)/90.0 # scale volume by how strong the turn is
+
+
             
 
         cv2.drawContours(frame, contours, -1, (0, 255, 0), 2)
