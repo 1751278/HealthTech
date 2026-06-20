@@ -455,33 +455,33 @@ def navigate():
         if contours:
             max_contour = max(contours, key=cv2.contourArea)
             max_area = cv2.contourArea(max_contour)
-        else:
-            max_contour = contours[0]
-            max_area = cv2.contourArea(contours[0])
-        avg_x = np.mean(max_contour[:, 0, 0])
-        # 1. Create a black mask of the same size as your image
-        mask = np.zeros(frame.shape[:2], dtype="uint8")
+            avg_x = np.mean(max_contour[:, 0, 0])
+            # 1. Create a black mask of the same size as your image
+            mask = np.zeros(frame.shape[:2], dtype="uint8")
 
-        # 2. Draw the filled contour on the mask
-        cv2.drawContours(mask, [max_contour], -1, 255, -1)
+            # 2. Draw the filled contour on the mask
+            cv2.drawContours(mask, [max_contour], -1, 255, -1)
+            print(max_area)
+            # 3. Calculate the average BGR color using the mask
+            avg_red = cv2.mean(frame, mask=mask)[2]
 
-        # 3. Calculate the average BGR color using the mask
-        avg_red = cv2.mean(frame, mask=mask)[2]
 
-        print(max_area)
-        #if large object in front of frame, turn away.  Also adds contour bias to steering
-        if avg_x < FRAME_WIDTH//2+75 and avg_x > FRAME_WIDTH//2-75:
-            if max_area < OBJECT_AREA_THRESH_MAX and max_area > OBJECT_AREA_THRESH_MIN and direction<15 and direction>-15:
-                if direction<0:
-                    direction += max_area * avg_red * OBJECT_STEER_SENSITIVITY
-                else:
-                    direction -= max_area * avg_red * OBJECT_STEER_SENSITIVITY
-        elif avg_x < FRAME_WIDTH//2: 
-            direction -= max_area * avg_red * OBJECT_STEER_SENSITIVITY
-        else:
-            direction += max_area * avg_red * OBJECT_STEER_SENSITIVITY
-            
-        direction = max(-90, min(90, direction))  # clamp to [-90, 90]
+            #if large object in front of frame, turn away.  Also adds contour bias to steering
+            if avg_x < FRAME_WIDTH//2+75 and avg_x > FRAME_WIDTH//2-75:
+                if max_area < OBJECT_AREA_THRESH_MAX and max_area > OBJECT_AREA_THRESH_MIN and direction<15 and direction>-15:
+                    if direction<0:
+                        direction += max_area * avg_red * OBJECT_STEER_SENSITIVITY
+                    else:
+                        direction -= max_area * avg_red * OBJECT_STEER_SENSITIVITY
+            elif avg_x < FRAME_WIDTH//2: 
+                direction -= max_area * avg_red * OBJECT_STEER_SENSITIVITY
+            else:
+                direction += max_area * avg_red * OBJECT_STEER_SENSITIVITY
+                
+            direction = max(-90, min(90, direction))  # clamp to [-90, 90]
+
+       
+        
         if direction > 0:
             audio_state["left_vol"] = 0.0
             audio_state["right_vol"] = abs(direction)/90.0 # scale volume by how strong the turn is
