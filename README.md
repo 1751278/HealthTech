@@ -12,10 +12,12 @@ HealthTech uses a phone or webcam as the primary sensor and runs several AI mode
 - **Door detection** — detects door frames using a custom-trained YOLO model to help navigate to exits
 - **Text reading** — reads signs and labels in the environment using OCR
 - **Live mapping** — builds a 2D top-down map of the user's path using visual odometry
+
 ---
 
 Example Image:
 ![Example](READMEAssets/Demo.png)
+
 ---
 
 ## Project Structure
@@ -97,20 +99,55 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 ```
 Full installation guide: https://docs.astral.sh/uv/getting-started/installation/
 
-**2. Install dependencies:**
-```bash
-uv pip install torch torchvision opencv-python ultralytics easyocr matplotlib numpy
+**2. Add uv to your PATH** (required in the same PowerShell session after install):
+```powershell
+$env:Path = "C:\Users\<YourUsername>\.local\bin;$env:Path"
+```
+To make this permanent so new PowerShell windows find `uv` automatically:
+```powershell
+[Environment]::SetEnvironmentVariable("Path", "C:\Users\<YourUsername>\.local\bin;" + [Environment]::GetEnvironmentVariable("Path", "User"), "User")
+```
+
+**3. Create and activate a virtual environment:**
+```powershell
+uv venv
+```
+If activating scripts is blocked, first run:
+```powershell
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+```
+Then activate:
+```powershell
+.venv\Scripts\activate
+```
+
+**4. Install dependencies:**
+```powershell
+uv pip install torch torchvision opencv-python ultralytics easyocr matplotlib numpy soundfile sounddevice
 ```
 
 **Alternative (if you already have Python and pip):**
 ```bash
-pip install torch torchvision opencv-python ultralytics easyocr matplotlib numpy
+pip install torch torchvision opencv-python ultralytics easyocr matplotlib numpy soundfile sounddevice
 ```
 
-You also need the Depth Anything V2 repo in a subfolder:
+**5. Clone the Depth Anything V2 repo** into the project folder:
 ```bash
 git clone https://github.com/DepthAnything/Depth-Anything-V2
 ```
+
+### VS Code Setup
+
+If you're using VS Code, make sure it uses the `.venv` interpreter so the play button works correctly:
+
+1. Press **Ctrl+Shift+P**
+2. Type **Python: Select Interpreter** and select it
+3. Choose the `.venv` option, or click **Enter interpreter path** and paste:
+   ```
+   C:\Users\<YourUsername>\.venv\Scripts\python.exe
+   ```
+
+Without this, VS Code may use a different Python installation that doesn't have the packages installed.
 
 ### Download Model Weights
 
