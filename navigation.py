@@ -6,7 +6,7 @@
 # - Added a not annoying sound.
 # Description: This module captures video from a camera, runs depth estimation and tells the user to navigate to the door.
 # TODO:
-# - Use NCNN TFlight model for depth estimation (faster/more efficient than current DPT)
+# - Use NCNN TFlight model for depth estimation (faster/more efficient than current DPT) -> make model run faster
 # - Add text-to-speech output
 # - Need to combine door path and avoidance path for guidance to the door
 # - Change song please... Or maybe some way to allow user to change it themselves
@@ -48,7 +48,7 @@ DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
  
 # --- Audio ---
 print("loading audio... check the constants section to change the sound file. MB if it is bad. I just searched no copyright music")
-AUDIO_DATA, SAMPLE_RATE = sf.read("SoundAssets/music.wav") #CHANGE THIS FOR DIFFERENT SOUND, I FOUND THIS ONLINE IM SORRY
+AUDIO_DATA, SAMPLE_RATE = sf.read("SoundAssets/jazz.mp3") #CHANGE THIS FOR DIFFERENT SOUND, I FOUND THIS ONLINE IM SORRY
 audio_location = 0  # current position in the audio file (in samples)
 # Audio params for non-blocking sounds
 sample_rate = 44100
