@@ -158,12 +158,24 @@ The YOLO model weights (`doorFrameModel.pt`, `doorFrameModel1.pt`, `yolov11n.pt`
 
 ---
 
-## Known Issues & TODOs
+# KNOWN ISSUES & TODOs (Ethan, Kenshi, Sahir)
 
-- `navigation.py` — depth model should be swapped for NCNN TFLite (faster/more efficient); `navigate()` doesn't return a value yet; no text-to-speech output
-- `main.py` — currently does nothing; goal is to integrate all modules into one unified interface
-- `vo_mapper.py` — object map rendering is disabled (commented out); heading drift is not corrected over time
-- Several modules have hardcoded camera index `1` — change to `0` if you don't have a secondary camera or Camo
+**1.** `navigation.py` — depth model should be swapped for NCNN/TFLite (faster/more efficient); `navigate()` doesn't return a value yet; no text-to-speech output
+
+**2.** In `navigation.py` combine object avoidance with the navigation to a specific object & also use default yolo model to detect chairs and tables to avoid
+
+**3.** Integrate LLM or reasoning model
+
+**4.** Memory(Remeber the past locations we have gone to)
+
+**5.** Improve OCR
+
+**6.** Actual Implementation of going anywhere by saying something(get voice stuff working)
+
+**7.** Implement into APP
+
+**8.** Be happy!
+
 
 ---
 
