@@ -15,30 +15,29 @@ print(f"CUDA Available: {torch.cuda.is_available()}")
 def main():
     print("Hello From HealthTech! \n")
     ocr = easyocr.Reader(['en'], gpu=True, quantize=True) # this is the OCR reader, it takes a list of languages to read. In this case, it's set to English. It can be modified to read other languages if needed.
-    THRESH = 0.50 #probability threshhold for displaying prediction
+    THRESH = 0.05 #probability threshhold for displaying prediction
 
-    cap = cv2.VideoCapture(1)#Change to zero if not working
+    cap = cv2.VideoCapture(0)#Change to zero if not working
     if not cap.isOpened():
         print("Failed to open webcam. Exiting.")
         return
  
     print("Webcam initialized. Starting video stream loop.")
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 480)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 640)
-
     cur_time = time.perf_counter() # DEBUG
     while True:
+        
         prev_time = cur_time
         cur_time = time.perf_counter()
         success, frame = cap.read()
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) # Put on gray scale
+        frame = cv2.resize(frame, None,fx=1.5,fy=1.5,interpolation = cv2.INTER_NEAREST)#vertical phone resolution*2
 
-        frame = cv2.resize(frame, (360, 640))#vertical phone resolution
         if not success:
             print("Failed to grab frame. Exiting loop.")
             break
 
-        pred = ocr.readtext(frame)
+        pred = ocr.readtext(frame,decoder = "greedy",canvas_size=640,mag_ratio = 1.5,batch_size = 4,workers = 0,link_threshold=0.9)
 
         for (bbox, text, prob) in pred:
             if prob > THRESH:
