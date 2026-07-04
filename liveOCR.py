@@ -12,6 +12,8 @@
 # TODO:
 # - Return detected text for further processing.
 # - tensoflow lite model for OCR,
+# - detect text with a simple model before using a more complex one. (PaddleOCR is pretty fast ngl)
+# - if we detect any text then tell the user to hold ( down the line )
 #################
  
 import time
