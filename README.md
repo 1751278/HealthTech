@@ -168,7 +168,7 @@ The YOLO model weights (`doorFrameModel.pt`, `doorFrameModel1.pt`, `yolov11n.pt`
 
 **4.** Memory(Remeber the past locations we have gone to)
 
-**5.** Improve OCR
+**5.** Improve OCR recognition accuracy
 
 **6.** Actual Implementation of going anywhere by saying something(get voice stuff working)
 

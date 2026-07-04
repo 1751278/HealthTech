@@ -6,10 +6,12 @@
 # - Added a not annoying sound.
 # Description: This module captures video from a camera, runs depth estimation and tells the user to navigate to the door.
 # TODO:
-# - Use NCNN TFlight model for depth estimation (faster/more efficient than current DPT) -> make model run faster
+# - Use NCNN TFlight model for depth estimation (faster/more efficient than current DPT) -> make model run faster K
 # - Add text-to-speech output
-# - Need to combine door path and avoidance path for guidance to the door
+# - Need to combine door path and avoidance path for guidance to the door S and E 
 # - Change song please... Or maybe some way to allow user to change it themselves
+# - try to find a qunatized version of depth model
+# - implement desk and chair avoidance with yolo model 26 S and E 
 #################
  
 import argparse

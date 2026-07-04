@@ -10,8 +10,8 @@
 # - May have to change cv2.VideoCapture(1) to cv2.VideoCapture(0) depending
 #   on the system. If you have multiple cameras, try different indices.
 # TODO:
-# - Add to Navigation.py
 # - Return detected text for further processing.
+# - tensoflow lite model for OCR,
 #################
  
 import time
@@ -132,7 +132,7 @@ def main():
         # Only send every 3rd frame over to OCR. OCR is the slow part,
         # so this keeps the video itself running smooth while OCR still
         # gets updated often enough to feel live.
-        if frame_idx % 3 == 0:
+        if frame_idx % 1 == 0:
             worker.submit(gray)
         frame_idx += 1
  
