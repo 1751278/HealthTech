@@ -1,65 +1,98 @@
-######################################
-# liveOCR.py
-# Created by Kenshi Kadarusman April 1 2026
-# Last Updated: ?
-#Comments: This is the live OCR module for HealthTech. It uses EasyOCR to read text from a live camera feed. The current implementation displays the detected text on the video feed, but it can be modified to return the detected text for further processing in the future.
-#Notes:
-#- May have to change cv2.VideoCapture(1) to cv2.VideoCapture(0) depending on the system. If you have multiple cameras, you may have to change the number to find the correct one.
-######################################
 import time
+import threading
 import cv2
 import easyocr
 import torch
-print(f"CUDA Available: {torch.cuda.is_available()}")
+
+class OCRWorker:
+    def __init__(self, reader, thresh=0.35):
+        self.reader = reader
+        self.thresh = thresh
+        self.lock = threading.Lock()
+        self.latest_frame = None
+        self.latest_results = []
+        self.running = True
+        self.thread = threading.Thread(target=self._loop, daemon=True)
+        self.thread.start()
+
+    def submit(self, frame):
+        with self.lock:
+            self.latest_frame = frame
+
+    def _loop(self):
+        while self.running:
+            with self.lock:
+                frame = self.latest_frame
+                self.latest_frame = None
+            if frame is None:
+                time.sleep(0.005)
+                continue
+            preds = self.reader.readtext(
+                frame, decoder="greedy", canvas_size=640,
+                mag_ratio=1.5, batch_size=4, workers=0,
+                link_threshold=0.5
+            )
+            with self.lock:
+                self.latest_results = [p for p in preds if p[2] > self.thresh]
+
+    def get_results(self):
+        with self.lock:
+            return self.latest_results
+
+    def stop(self):
+        self.running = False
+        self.thread.join()
+
 
 def main():
-    print("Hello From HealthTech! \n")
-    ocr = easyocr.Reader(['en'], gpu=True, quantize=True) # this is the OCR reader, it takes a list of languages to read. In this case, it's set to English. It can be modified to read other languages if needed.
-    THRESH = 0.05 #probability threshhold for displaying prediction
+    print(f"CUDA Available: {torch.cuda.is_available()}")
+    ocr = easyocr.Reader(['en'], gpu=True, quantize=False)
+    worker = OCRWorker(ocr, thresh=0.35)
 
-    cap = cv2.VideoCapture(0)#Change to zero if not working
+    cap = cv2.VideoCapture(1)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 960)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)
     if not cap.isOpened():
         print("Failed to open webcam. Exiting.")
         return
- 
-    print("Webcam initialized. Starting video stream loop.")
 
-    cur_time = time.perf_counter() # DEBUG
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    cur_time = time.perf_counter()
+    frame_idx = 0
+
     while True:
-        
-        prev_time = cur_time
-        cur_time = time.perf_counter()
         success, frame = cap.read()
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) # Put on gray scale
-        frame = cv2.resize(frame, None,fx=1.5,fy=1.5,interpolation = cv2.INTER_NEAREST)#vertical phone resolution*2
-
         if not success:
             print("Failed to grab frame. Exiting loop.")
             break
 
-        pred = ocr.readtext(frame,decoder = "greedy",canvas_size=640,mag_ratio = 1.5,batch_size = 4,workers = 0,link_threshold=0.9)
+        prev_time = cur_time
+        cur_time = time.perf_counter()
 
-        for (bbox, text, prob) in pred:
-            if prob > THRESH:
-                ##gather info on bound box
-                (top_left, top_right, bottom_right, bottom_left) = bbox
-                top_left = (int(top_left[0]), int(top_left[1]))
-                bottom_right = (int(bottom_right[0]), int(bottom_right[1]))
-                ## make bound box
-                cv2.rectangle(frame, top_left, bottom_right, (0, 255, 0), 2)
-                ## put text on image
-                cv2.putText(frame, text, (top_left[0]-20, top_left[1]), fontFace = cv2.FONT_HERSHEY_SIMPLEX, fontScale = 0.5, color = (0, 0, 255), thickness = 2) #CV2 uses BGR
-        
-        cv2.putText(frame, f"FPS:{1/(cur_time-prev_time):.2f}", (5, 15), fontFace = cv2.FONT_HERSHEY_SIMPLEX, fontScale = 0.5, color = (0,0,255), thickness = 2)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = clahe.apply(gray)
+
+        # only hand off every 3rd frame to the OCR thread
+        if frame_idx % 3 == 0:
+            worker.submit(gray)
+        frame_idx += 1
+
+        for (bbox, text, prob) in worker.get_results():
+            top_left = (int(bbox[0][0]), int(bbox[0][1]))
+            bottom_right = (int(bbox[2][0]), int(bbox[2][1]))
+            cv2.rectangle(frame, top_left, bottom_right, (0, 255, 0), 2)
+            cv2.putText(frame, text, (top_left[0] - 20, top_left[1]),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
+        cv2.putText(frame, f"FPS:{1/(cur_time-prev_time):.2f}", (5, 15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
         cv2.imshow("Live text detection", frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
-            print("'q' key pressed. Stopping application.")
             break
 
+    worker.stop()
     cap.release()
     cv2.destroyAllWindows()
-    print("Application stopped")
-
 
 if __name__ == "__main__":
     main()
