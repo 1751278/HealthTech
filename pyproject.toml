@@ -13,5 +13,11 @@ dependencies = [
     "matplotlib>=3.10.9",
     "soundfile>=0.13.1",
     "sounddevice>=0.5.5",
+    "torch>=2.11.0",
+    "onnxscript>=0.7.1",
+    "onnxsim>=0.6.5",
+    "onnxruntime>=1.27.0",
+    "ncnn>=1.0.20260526",
+    "onnx2tf>=1.28.8",
 ]
 
