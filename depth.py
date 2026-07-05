@@ -17,7 +17,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Depth Anything V2 - Live Camera')
     
     # Changed to camera index (usually 0)
-    parser.add_argument('--camera-id', type=int, default=0, help='ID of the camera/webcam device')
+    parser.add_argument('--camera-id', type=int, default=1, help='ID of the camera/webcam device')
     parser.add_argument('--input-size', type=int, default=256)
     parser.add_argument('--encoder', type=str, default='vits', choices=['vits', 'vitb', 'vitl', 'vitg'])
     parser.add_argument('--pred-only', action='store_true', help='only display the prediction')
@@ -52,6 +52,7 @@ if __name__ == '__main__':
 
     while True:
         ret, raw_frame = cap.read()
+        raw_frame = cv2.resize(raw_frame, (360, 640))  # Resize for faster processing
         if not ret:
             break
 
