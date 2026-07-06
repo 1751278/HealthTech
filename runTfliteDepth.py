@@ -18,7 +18,7 @@ def run_tflite_inference(image_path, model_path, output_path="depth_tflite_resul
         raise FileNotFoundError(f"Could not load image from {image_path}")
         
     orig_h, orig_w, _ = img.shape
-    target_size = 266  # Must match the static size used during export
+    target_size = 518  # Must match the static size used during export
 
     # Resize image to target dimensions and convert BGR to RGB
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -70,5 +70,5 @@ if __name__ == "__main__":
     # Target your standard FP32 or optimized INT8 model
     run_tflite_inference(
         image_path="TestImage/name.jpg",
-        model_path="depthAnythingModelFaster\int8Tflite\depth_anything_v2_vits_sim_float32.tflite" 
+        model_path="depthAnythingModelFaster\Depth-Anything-V2.tflite" 
     )
