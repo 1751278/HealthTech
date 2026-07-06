@@ -7,7 +7,7 @@ def run_ncnn_inference(image_path, param_path, bin_path, output_path="depth_resu
     net = ncnn.Net()
     
     # Enable multi-threading for faster CPU performance
-    net.opt.num_threads = 4  
+    net.opt.num_threads = 8  # Match number of cores in your CPU  
     
     net.load_param(param_path)
     net.load_model(bin_path)
@@ -18,7 +18,7 @@ def run_ncnn_inference(image_path, param_path, bin_path, output_path="depth_resu
         raise FileNotFoundError(f"Could not load image from {image_path}")
         
     orig_h, orig_w, _ = img.shape
-    target_size = 518  # Must match the static size chosen during ONNX export
+    target_size = 266  # Must match the static size chosen during ONNX export
 
     # Depth Anything V2 standard ImageNet normalization
     # Note: NCNN uses a known typo in its API mapping: 'substract' instead of 'subtract'

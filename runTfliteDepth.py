@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import tensorflow as tf
+import onnx2tf
 
 def run_tflite_inference(image_path, model_path, output_path="depth_tflite_result.jpg"):
     # 1. Load the TFLite model and allocate tensors
@@ -12,13 +13,19 @@ def run_tflite_inference(image_path, model_path, output_path="depth_tflite_resul
     input_details = interpreter.get_input_details()
     output_details = interpreter.get_output_details()
 
+        # 1. Get input tensor propertie
+    print("--- Input Details ---")
+    print(input_details)
+    print("\n--- Output Details ---")
+    print(output_details)
+
     # 2. Read and preprocess the input image
     img = cv2.imread(image_path)
     if img is None:
         raise FileNotFoundError(f"Could not load image from {image_path}")
         
     orig_h, orig_w, _ = img.shape
-    target_size = 518  # Must match the static size used during export
+    target_size = 256  # Must match the static size used during export
 
     # Resize image to target dimensions and convert BGR to RGB
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -26,8 +33,10 @@ def run_tflite_inference(image_path, model_path, output_path="depth_tflite_resul
 
     # Convert to float32 and normalize using standard ImageNet values
     img_input = img_resized.astype(np.float32)
-    mean = np.array([123.675, 116.28, 103.53], dtype=np.float32)
-    std = np.array([58.395, 57.12, 57.375], dtype=np.float32)
+    img_input = img_input / 255.0  # Scale to [0, 1]
+    #image net norm
+    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
     img_input = (img_input - mean) / std
 
     # Add batch dimension: (518, 518, 3) -> (1, 518, 518, 3)
@@ -70,5 +79,5 @@ if __name__ == "__main__":
     # Target your standard FP32 or optimized INT8 model
     run_tflite_inference(
         image_path="TestImage/name.jpg",
-        model_path="depthAnythingModelFaster\Depth-Anything-V2.tflite" 
+        model_path="depthAnythingModelFaster\midasDepth.tflite" 
     )
