@@ -1,0 +1,208 @@
+7767517
+206 205
+pnnx.Input               in0                      0 1 0 #0=(1,3,266,266)f32
+nn.Conv2d                conv2d_4                 1 1 0 1 bias=True dilation=(1,1) groups=1 in_channels=3 kernel_size=(14,14) out_channels=384 padding=(0,0) padding_mode=zeros stride=(14,14) @bias=(384)f32 @weight=(384,3,14,14)f32 $input=0 #0=(1,3,266,266)f32 #1=(1,384,19,19)f32
+Tensor.reshape           Tensor.reshape_43        1 1 1 2 shape=(1,384,361) $input=1 #1=(1,384,19,19)f32 #2=(1,384,361)f32
+Tensor.permute           Tensor.permute_1         1 1 2 3 dims=(0,2,1) $input=2 #2=(1,384,361)f32 #3=(1,361,384)f32
+pnnx.Attribute           expand                   0 1 4 @data=(1,1,384)f32 #4=(1,1,384)f32
+torch.cat                torch.cat_0              2 1 4 3 5 dim=1 #4=(1,1,384)f32 #3=(1,361,384)f32 #5=(1,362,384)f32
+pnnx.Attribute           cat_1                    0 1 6 @data=(1,362,384)f32 #6=(1,362,384)f32
+pnnx.Expression          pnnx_expr_178            2 1 5 6 7 expr=add(@0,@1) #5=(1,362,384)f32 #6=(1,362,384)f32 #7=(1,362,384)f32
+nn.LayerNorm             ln_0                     1 1 7 8 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=7 #7=(1,362,384)f32 #8=(1,362,384)f32
+nn.MultiheadAttention    attention_0              1 1 8 9 add_bias_kv=False add_zero_attn=False batch_first=True bias=True embed_dim=384 kdim=384 num_heads=6 vdim=384 @in_proj_bias=(1152)f32 @in_proj_weight=(1152,384)f32 @out_proj.bias=(384)f32 @out_proj.weight=(384,384)f32 $input=8 #8=(1,362,384)f32 #9=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.0.ls1.gamma 0 1 10 @data=(384)f32 #10=(384)f32
+pnnx.Expression          pnnx_expr_174            3 1 7 9 10 11 expr=add(@0,mul(@1,@2)) #7=(1,362,384)f32 #9=(1,362,384)f32 #10=(384)f32 #11=(1,362,384)f32
+nn.LayerNorm             ln_1                     1 1 11 12 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=11 #11=(1,362,384)f32 #12=(1,362,384)f32
+nn.Linear                F_linear_2               1 1 12 13 bias=True in_features=384 out_features=1536 @bias=(1536)f32 @weight=(1536,384)f32 $input=12 #12=(1,362,384)f32 #13=(1,362,1536)f32
+pnnx.Expression          pnnx_expr_166            1 1 13 14 expr=mul(@0,mul(0.5,add(erf(div(@0,1.41421354)),1.0))) #13=(1,362,1536)f32 #14=(1,362,1536)f32
+nn.Linear                F_linear_3               1 1 14 15 bias=True in_features=1536 out_features=384 @bias=(384)f32 @weight=(384,1536)f32 $input=14 #14=(1,362,1536)f32 #15=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.0.ls2.gamma 0 1 16 @data=(384)f32 #16=(384)f32
+pnnx.Expression          pnnx_expr_164            3 1 11 15 16 17 expr=add(@0,mul(@1,@2)) #11=(1,362,384)f32 #15=(1,362,384)f32 #16=(384)f32 #17=(1,362,384)f32
+nn.LayerNorm             ln_2                     1 1 17 18 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=17 #17=(1,362,384)f32 #18=(1,362,384)f32
+nn.MultiheadAttention    attention_1              1 1 18 19 add_bias_kv=False add_zero_attn=False batch_first=True bias=True embed_dim=384 kdim=384 num_heads=6 vdim=384 @in_proj_bias=(1152)f32 @in_proj_weight=(1152,384)f32 @out_proj.bias=(384)f32 @out_proj.weight=(384,384)f32 $input=18 #18=(1,362,384)f32 #19=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.1.ls1.gamma 0 1 20 @data=(384)f32 #20=(384)f32
+pnnx.Expression          pnnx_expr_160            3 1 17 19 20 21 expr=add(@0,mul(@1,@2)) #17=(1,362,384)f32 #19=(1,362,384)f32 #20=(384)f32 #21=(1,362,384)f32
+nn.LayerNorm             ln_3                     1 1 21 22 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=21 #21=(1,362,384)f32 #22=(1,362,384)f32
+nn.Linear                F_linear_6               1 1 22 23 bias=True in_features=384 out_features=1536 @bias=(1536)f32 @weight=(1536,384)f32 $input=22 #22=(1,362,384)f32 #23=(1,362,1536)f32
+pnnx.Expression          pnnx_expr_152            1 1 23 24 expr=mul(@0,mul(0.5,add(erf(div(@0,1.41421354)),1.0))) #23=(1,362,1536)f32 #24=(1,362,1536)f32
+nn.Linear                F_linear_7               1 1 24 25 bias=True in_features=1536 out_features=384 @bias=(384)f32 @weight=(384,1536)f32 $input=24 #24=(1,362,1536)f32 #25=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.1.ls2.gamma 0 1 26 @data=(384)f32 #26=(384)f32
+pnnx.Expression          pnnx_expr_150            3 1 21 25 26 27 expr=add(@0,mul(@1,@2)) #21=(1,362,384)f32 #25=(1,362,384)f32 #26=(384)f32 #27=(1,362,384)f32
+nn.LayerNorm             ln_4                     1 1 27 28 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=27 #27=(1,362,384)f32 #28=(1,362,384)f32
+nn.MultiheadAttention    attention_2              1 1 28 29 add_bias_kv=False add_zero_attn=False batch_first=True bias=True embed_dim=384 kdim=384 num_heads=6 vdim=384 @in_proj_bias=(1152)f32 @in_proj_weight=(1152,384)f32 @out_proj.bias=(384)f32 @out_proj.weight=(384,384)f32 $input=28 #28=(1,362,384)f32 #29=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.2.ls1.gamma 0 1 30 @data=(384)f32 #30=(384)f32
+pnnx.Expression          pnnx_expr_146            3 1 27 29 30 31 expr=add(@0,mul(@1,@2)) #27=(1,362,384)f32 #29=(1,362,384)f32 #30=(384)f32 #31=(1,362,384)f32
+nn.LayerNorm             ln_5                     1 1 31 32 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=31 #31=(1,362,384)f32 #32=(1,362,384)f32
+nn.Linear                F_linear_10              1 1 32 33 bias=True in_features=384 out_features=1536 @bias=(1536)f32 @weight=(1536,384)f32 $input=32 #32=(1,362,384)f32 #33=(1,362,1536)f32
+pnnx.Expression          pnnx_expr_138            1 1 33 34 expr=mul(@0,mul(0.5,add(erf(div(@0,1.41421354)),1.0))) #33=(1,362,1536)f32 #34=(1,362,1536)f32
+nn.Linear                F_linear_11              1 1 34 35 bias=True in_features=1536 out_features=384 @bias=(384)f32 @weight=(384,1536)f32 $input=34 #34=(1,362,1536)f32 #35=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.2.ls2.gamma 0 1 36 @data=(384)f32 #36=(384)f32
+pnnx.Expression          pnnx_expr_136            3 1 31 35 36 37 expr=add(@0,mul(@1,@2)) #31=(1,362,384)f32 #35=(1,362,384)f32 #36=(384)f32 #37=(1,362,384)f32
+nn.LayerNorm             ln_6                     1 1 37 38 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=37 #37=(1,362,384)f32 #38=(1,362,384)f32
+nn.MultiheadAttention    attention_3              1 1 38 39 add_bias_kv=False add_zero_attn=False batch_first=True bias=True embed_dim=384 kdim=384 num_heads=6 vdim=384 @in_proj_bias=(1152)f32 @in_proj_weight=(1152,384)f32 @out_proj.bias=(384)f32 @out_proj.weight=(384,384)f32 $input=38 #38=(1,362,384)f32 #39=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.3.ls1.gamma 0 1 40 @data=(384)f32 #40=(384)f32
+pnnx.Expression          pnnx_expr_132            3 1 37 39 40 41 expr=add(@0,mul(@1,@2)) #37=(1,362,384)f32 #39=(1,362,384)f32 #40=(384)f32 #41=(1,362,384)f32
+nn.LayerNorm             ln_7                     1 1 41 42 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=41 #41=(1,362,384)f32 #42=(1,362,384)f32
+nn.Linear                F_linear_14              1 1 42 43 bias=True in_features=384 out_features=1536 @bias=(1536)f32 @weight=(1536,384)f32 $input=42 #42=(1,362,384)f32 #43=(1,362,1536)f32
+pnnx.Expression          pnnx_expr_124            1 1 43 44 expr=mul(@0,mul(0.5,add(erf(div(@0,1.41421354)),1.0))) #43=(1,362,1536)f32 #44=(1,362,1536)f32
+nn.Linear                F_linear_15              1 1 44 45 bias=True in_features=1536 out_features=384 @bias=(384)f32 @weight=(384,1536)f32 $input=44 #44=(1,362,1536)f32 #45=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.3.ls2.gamma 0 1 46 @data=(384)f32 #46=(384)f32
+pnnx.Expression          pnnx_expr_122            3 1 41 45 46 47 expr=add(@0,mul(@1,@2)) #41=(1,362,384)f32 #45=(1,362,384)f32 #46=(384)f32 #47=(1,362,384)f32
+nn.LayerNorm             ln_8                     1 1 47 48 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=47 #47=(1,362,384)f32 #48=(1,362,384)f32
+nn.MultiheadAttention    attention_4              1 1 48 49 add_bias_kv=False add_zero_attn=False batch_first=True bias=True embed_dim=384 kdim=384 num_heads=6 vdim=384 @in_proj_bias=(1152)f32 @in_proj_weight=(1152,384)f32 @out_proj.bias=(384)f32 @out_proj.weight=(384,384)f32 $input=48 #48=(1,362,384)f32 #49=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.4.ls1.gamma 0 1 50 @data=(384)f32 #50=(384)f32
+pnnx.Expression          pnnx_expr_118            3 1 47 49 50 51 expr=add(@0,mul(@1,@2)) #47=(1,362,384)f32 #49=(1,362,384)f32 #50=(384)f32 #51=(1,362,384)f32
+nn.LayerNorm             ln_9                     1 1 51 52 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=51 #51=(1,362,384)f32 #52=(1,362,384)f32
+nn.Linear                F_linear_18              1 1 52 53 bias=True in_features=384 out_features=1536 @bias=(1536)f32 @weight=(1536,384)f32 $input=52 #52=(1,362,384)f32 #53=(1,362,1536)f32
+pnnx.Expression          pnnx_expr_110            1 1 53 54 expr=mul(@0,mul(0.5,add(erf(div(@0,1.41421354)),1.0))) #53=(1,362,1536)f32 #54=(1,362,1536)f32
+nn.Linear                F_linear_19              1 1 54 55 bias=True in_features=1536 out_features=384 @bias=(384)f32 @weight=(384,1536)f32 $input=54 #54=(1,362,1536)f32 #55=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.4.ls2.gamma 0 1 56 @data=(384)f32 #56=(384)f32
+pnnx.Expression          pnnx_expr_108            3 1 51 55 56 57 expr=add(@0,mul(@1,@2)) #51=(1,362,384)f32 #55=(1,362,384)f32 #56=(384)f32 #57=(1,362,384)f32
+nn.LayerNorm             ln_10                    1 1 57 58 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=57 #57=(1,362,384)f32 #58=(1,362,384)f32
+nn.MultiheadAttention    attention_5              1 1 58 59 add_bias_kv=False add_zero_attn=False batch_first=True bias=True embed_dim=384 kdim=384 num_heads=6 vdim=384 @in_proj_bias=(1152)f32 @in_proj_weight=(1152,384)f32 @out_proj.bias=(384)f32 @out_proj.weight=(384,384)f32 $input=58 #58=(1,362,384)f32 #59=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.5.ls1.gamma 0 1 60 @data=(384)f32 #60=(384)f32
+pnnx.Expression          pnnx_expr_104            3 1 57 59 60 61 expr=add(@0,mul(@1,@2)) #57=(1,362,384)f32 #59=(1,362,384)f32 #60=(384)f32 #61=(1,362,384)f32
+nn.LayerNorm             ln_11                    1 1 61 62 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=61 #61=(1,362,384)f32 #62=(1,362,384)f32
+nn.Linear                F_linear_22              1 1 62 63 bias=True in_features=384 out_features=1536 @bias=(1536)f32 @weight=(1536,384)f32 $input=62 #62=(1,362,384)f32 #63=(1,362,1536)f32
+pnnx.Expression          pnnx_expr_96             1 1 63 64 expr=mul(@0,mul(0.5,add(erf(div(@0,1.41421354)),1.0))) #63=(1,362,1536)f32 #64=(1,362,1536)f32
+nn.Linear                F_linear_23              1 1 64 65 bias=True in_features=1536 out_features=384 @bias=(384)f32 @weight=(384,1536)f32 $input=64 #64=(1,362,1536)f32 #65=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.5.ls2.gamma 0 1 66 @data=(384)f32 #66=(384)f32
+pnnx.Expression          pnnx_expr_94             3 1 61 65 66 67 expr=add(@0,mul(@1,@2)) #61=(1,362,384)f32 #65=(1,362,384)f32 #66=(384)f32 #67=(1,362,384)f32
+nn.LayerNorm             ln_12                    1 1 67 68 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=67 #67=(1,362,384)f32 #68=(1,362,384)f32
+nn.MultiheadAttention    attention_6              1 1 68 69 add_bias_kv=False add_zero_attn=False batch_first=True bias=True embed_dim=384 kdim=384 num_heads=6 vdim=384 @in_proj_bias=(1152)f32 @in_proj_weight=(1152,384)f32 @out_proj.bias=(384)f32 @out_proj.weight=(384,384)f32 $input=68 #68=(1,362,384)f32 #69=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.6.ls1.gamma 0 1 70 @data=(384)f32 #70=(384)f32
+pnnx.Expression          pnnx_expr_90             3 1 67 69 70 71 expr=add(@0,mul(@1,@2)) #67=(1,362,384)f32 #69=(1,362,384)f32 #70=(384)f32 #71=(1,362,384)f32
+nn.LayerNorm             ln_13                    1 1 71 72 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=71 #71=(1,362,384)f32 #72=(1,362,384)f32
+nn.Linear                F_linear_26              1 1 72 73 bias=True in_features=384 out_features=1536 @bias=(1536)f32 @weight=(1536,384)f32 $input=72 #72=(1,362,384)f32 #73=(1,362,1536)f32
+pnnx.Expression          pnnx_expr_82             1 1 73 74 expr=mul(@0,mul(0.5,add(erf(div(@0,1.41421354)),1.0))) #73=(1,362,1536)f32 #74=(1,362,1536)f32
+nn.Linear                F_linear_27              1 1 74 75 bias=True in_features=1536 out_features=384 @bias=(384)f32 @weight=(384,1536)f32 $input=74 #74=(1,362,1536)f32 #75=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.6.ls2.gamma 0 1 76 @data=(384)f32 #76=(384)f32
+pnnx.Expression          pnnx_expr_80             3 1 71 75 76 77 expr=add(@0,mul(@1,@2)) #71=(1,362,384)f32 #75=(1,362,384)f32 #76=(384)f32 #77=(1,362,384)f32
+nn.LayerNorm             ln_14                    1 1 77 78 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=77 #77=(1,362,384)f32 #78=(1,362,384)f32
+nn.MultiheadAttention    attention_7              1 1 78 79 add_bias_kv=False add_zero_attn=False batch_first=True bias=True embed_dim=384 kdim=384 num_heads=6 vdim=384 @in_proj_bias=(1152)f32 @in_proj_weight=(1152,384)f32 @out_proj.bias=(384)f32 @out_proj.weight=(384,384)f32 $input=78 #78=(1,362,384)f32 #79=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.7.ls1.gamma 0 1 80 @data=(384)f32 #80=(384)f32
+pnnx.Expression          pnnx_expr_76             3 1 77 79 80 81 expr=add(@0,mul(@1,@2)) #77=(1,362,384)f32 #79=(1,362,384)f32 #80=(384)f32 #81=(1,362,384)f32
+nn.LayerNorm             ln_15                    1 1 81 82 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=81 #81=(1,362,384)f32 #82=(1,362,384)f32
+nn.Linear                F_linear_30              1 1 82 83 bias=True in_features=384 out_features=1536 @bias=(1536)f32 @weight=(1536,384)f32 $input=82 #82=(1,362,384)f32 #83=(1,362,1536)f32
+pnnx.Expression          pnnx_expr_68             1 1 83 84 expr=mul(@0,mul(0.5,add(erf(div(@0,1.41421354)),1.0))) #83=(1,362,1536)f32 #84=(1,362,1536)f32
+nn.Linear                F_linear_31              1 1 84 85 bias=True in_features=1536 out_features=384 @bias=(384)f32 @weight=(384,1536)f32 $input=84 #84=(1,362,1536)f32 #85=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.7.ls2.gamma 0 1 86 @data=(384)f32 #86=(384)f32
+pnnx.Expression          pnnx_expr_66             3 1 81 85 86 87 expr=add(@0,mul(@1,@2)) #81=(1,362,384)f32 #85=(1,362,384)f32 #86=(384)f32 #87=(1,362,384)f32
+nn.LayerNorm             ln_16                    1 1 87 88 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=87 #87=(1,362,384)f32 #88=(1,362,384)f32
+nn.MultiheadAttention    attention_8              1 1 88 89 add_bias_kv=False add_zero_attn=False batch_first=True bias=True embed_dim=384 kdim=384 num_heads=6 vdim=384 @in_proj_bias=(1152)f32 @in_proj_weight=(1152,384)f32 @out_proj.bias=(384)f32 @out_proj.weight=(384,384)f32 $input=88 #88=(1,362,384)f32 #89=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.8.ls1.gamma 0 1 90 @data=(384)f32 #90=(384)f32
+pnnx.Expression          pnnx_expr_62             3 1 87 89 90 91 expr=add(@0,mul(@1,@2)) #87=(1,362,384)f32 #89=(1,362,384)f32 #90=(384)f32 #91=(1,362,384)f32
+nn.LayerNorm             ln_17                    1 1 91 92 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=91 #91=(1,362,384)f32 #92=(1,362,384)f32
+nn.Linear                F_linear_34              1 1 92 93 bias=True in_features=384 out_features=1536 @bias=(1536)f32 @weight=(1536,384)f32 $input=92 #92=(1,362,384)f32 #93=(1,362,1536)f32
+pnnx.Expression          pnnx_expr_54             1 1 93 94 expr=mul(@0,mul(0.5,add(erf(div(@0,1.41421354)),1.0))) #93=(1,362,1536)f32 #94=(1,362,1536)f32
+nn.Linear                F_linear_35              1 1 94 95 bias=True in_features=1536 out_features=384 @bias=(384)f32 @weight=(384,1536)f32 $input=94 #94=(1,362,1536)f32 #95=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.8.ls2.gamma 0 1 96 @data=(384)f32 #96=(384)f32
+pnnx.Expression          pnnx_expr_52             3 1 91 95 96 97 expr=add(@0,mul(@1,@2)) #91=(1,362,384)f32 #95=(1,362,384)f32 #96=(384)f32 #97=(1,362,384)f32
+nn.LayerNorm             ln_18                    1 1 97 98 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=97 #97=(1,362,384)f32 #98=(1,362,384)f32
+nn.MultiheadAttention    attention_9              1 1 98 99 add_bias_kv=False add_zero_attn=False batch_first=True bias=True embed_dim=384 kdim=384 num_heads=6 vdim=384 @in_proj_bias=(1152)f32 @in_proj_weight=(1152,384)f32 @out_proj.bias=(384)f32 @out_proj.weight=(384,384)f32 $input=98 #98=(1,362,384)f32 #99=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.9.ls1.gamma 0 1 100 @data=(384)f32 #100=(384)f32
+pnnx.Expression          pnnx_expr_48             3 1 97 99 100 101 expr=add(@0,mul(@1,@2)) #97=(1,362,384)f32 #99=(1,362,384)f32 #100=(384)f32 #101=(1,362,384)f32
+nn.LayerNorm             ln_19                    1 1 101 102 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=101 #101=(1,362,384)f32 #102=(1,362,384)f32
+nn.Linear                F_linear_38              1 1 102 103 bias=True in_features=384 out_features=1536 @bias=(1536)f32 @weight=(1536,384)f32 $input=102 #102=(1,362,384)f32 #103=(1,362,1536)f32
+pnnx.Expression          pnnx_expr_40             1 1 103 104 expr=mul(@0,mul(0.5,add(erf(div(@0,1.41421354)),1.0))) #103=(1,362,1536)f32 #104=(1,362,1536)f32
+nn.Linear                F_linear_39              1 1 104 105 bias=True in_features=1536 out_features=384 @bias=(384)f32 @weight=(384,1536)f32 $input=104 #104=(1,362,1536)f32 #105=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.9.ls2.gamma 0 1 106 @data=(384)f32 #106=(384)f32
+pnnx.Expression          pnnx_expr_38             3 1 101 105 106 107 expr=add(@0,mul(@1,@2)) #101=(1,362,384)f32 #105=(1,362,384)f32 #106=(384)f32 #107=(1,362,384)f32
+nn.LayerNorm             ln_20                    1 1 107 108 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=107 #107=(1,362,384)f32 #108=(1,362,384)f32
+nn.MultiheadAttention    attention_10             1 1 108 109 add_bias_kv=False add_zero_attn=False batch_first=True bias=True embed_dim=384 kdim=384 num_heads=6 vdim=384 @in_proj_bias=(1152)f32 @in_proj_weight=(1152,384)f32 @out_proj.bias=(384)f32 @out_proj.weight=(384,384)f32 $input=108 #108=(1,362,384)f32 #109=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.10.ls1.gamma 0 1 110 @data=(384)f32 #110=(384)f32
+pnnx.Expression          pnnx_expr_34             3 1 107 109 110 111 expr=add(@0,mul(@1,@2)) #107=(1,362,384)f32 #109=(1,362,384)f32 #110=(384)f32 #111=(1,362,384)f32
+nn.LayerNorm             ln_21                    1 1 111 112 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=111 #111=(1,362,384)f32 #112=(1,362,384)f32
+nn.Linear                F_linear_42              1 1 112 113 bias=True in_features=384 out_features=1536 @bias=(1536)f32 @weight=(1536,384)f32 $input=112 #112=(1,362,384)f32 #113=(1,362,1536)f32
+pnnx.Expression          pnnx_expr_26             1 1 113 114 expr=mul(@0,mul(0.5,add(erf(div(@0,1.41421354)),1.0))) #113=(1,362,1536)f32 #114=(1,362,1536)f32
+nn.Linear                F_linear_43              1 1 114 115 bias=True in_features=1536 out_features=384 @bias=(384)f32 @weight=(384,1536)f32 $input=114 #114=(1,362,1536)f32 #115=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.10.ls2.gamma 0 1 116 @data=(384)f32 #116=(384)f32
+pnnx.Expression          pnnx_expr_24             3 1 111 115 116 117 expr=add(@0,mul(@1,@2)) #111=(1,362,384)f32 #115=(1,362,384)f32 #116=(384)f32 #117=(1,362,384)f32
+nn.LayerNorm             ln_22                    1 1 117 118 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=117 #117=(1,362,384)f32 #118=(1,362,384)f32
+nn.MultiheadAttention    attention_11             1 1 118 119 add_bias_kv=False add_zero_attn=False batch_first=True bias=True embed_dim=384 kdim=384 num_heads=6 vdim=384 @in_proj_bias=(1152)f32 @in_proj_weight=(1152,384)f32 @out_proj.bias=(384)f32 @out_proj.weight=(384,384)f32 $input=118 #118=(1,362,384)f32 #119=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.11.ls1.gamma 0 1 120 @data=(384)f32 #120=(384)f32
+pnnx.Expression          pnnx_expr_20             3 1 117 119 120 121 expr=add(@0,mul(@1,@2)) #117=(1,362,384)f32 #119=(1,362,384)f32 #120=(384)f32 #121=(1,362,384)f32
+nn.LayerNorm             ln_23                    1 1 121 122 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=121 #121=(1,362,384)f32 #122=(1,362,384)f32
+nn.Linear                F_linear_46              1 1 122 123 bias=True in_features=384 out_features=1536 @bias=(1536)f32 @weight=(1536,384)f32 $input=122 #122=(1,362,384)f32 #123=(1,362,1536)f32
+pnnx.Expression          pnnx_expr_12             1 1 123 124 expr=mul(@0,mul(0.5,add(erf(div(@0,1.41421354)),1.0))) #123=(1,362,1536)f32 #124=(1,362,1536)f32
+nn.Linear                F_linear_47              1 1 124 125 bias=True in_features=1536 out_features=384 @bias=(384)f32 @weight=(384,1536)f32 $input=124 #124=(1,362,1536)f32 #125=(1,362,384)f32
+pnnx.Attribute           pretrained.blocks.11.ls2.gamma 0 1 126 @data=(384)f32 #126=(384)f32
+pnnx.Expression          pnnx_expr_10             3 1 121 125 126 127 expr=add(@0,mul(@1,@2)) #121=(1,362,384)f32 #125=(1,362,384)f32 #126=(384)f32 #127=(1,362,384)f32
+nn.LayerNorm             ln_24                    1 1 37 128 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=37 #37=(1,362,384)f32 #128=(1,362,384)f32
+nn.LayerNorm             ln_25                    1 1 67 129 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=67 #67=(1,362,384)f32 #129=(1,362,384)f32
+nn.LayerNorm             ln_26                    1 1 97 130 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=97 #97=(1,362,384)f32 #130=(1,362,384)f32
+nn.LayerNorm             ln_27                    1 1 127 131 elementwise_affine=True eps=1.000000e-6 normalized_shape=(384) @bias=(384)f32 @weight=(384)f32 $input=127 #127=(1,362,384)f32 #131=(1,362,384)f32
+Tensor.slice             Tensor.slice_108         1 1 128 132 dim=1 end=2147483647 start=1 step=1 $input=128 #128=(1,362,384)f32 #132=(1,361,384)f32
+Tensor.slice             Tensor.slice_109         1 1 129 133 dim=1 end=2147483647 start=1 step=1 $input=129 #129=(1,362,384)f32 #133=(1,361,384)f32
+Tensor.slice             Tensor.slice_110         1 1 130 134 dim=1 end=2147483647 start=1 step=1 $input=130 #130=(1,362,384)f32 #134=(1,361,384)f32
+Tensor.slice             Tensor.slice_111         1 1 131 135 dim=1 end=2147483647 start=1 step=1 $input=131 #131=(1,362,384)f32 #135=(1,361,384)f32
+Tensor.permute           Tensor.permute_38        1 1 132 136 dims=(0,2,1) $input=132 #132=(1,361,384)f32 #136=(1,384,361)f32
+Tensor.reshape           Tensor.reshape_68        1 1 136 137 shape=(1,384,19,19) $input=136 #136=(1,384,361)f32 #137=(1,384,19,19)f32
+nn.Conv2d                conv2d_5                 1 1 137 138 bias=True dilation=(1,1) groups=1 in_channels=384 kernel_size=(1,1) out_channels=48 padding=(0,0) padding_mode=zeros stride=(1,1) @bias=(48)f32 @weight=(48,384,1,1)f32 $input=137 #137=(1,384,19,19)f32 #138=(1,48,19,19)f32
+nn.ConvTranspose2d       conv_transpose2d_0       1 1 138 139 bias=True dilation=(1,1) groups=1 in_channels=48 kernel_size=(4,4) out_channels=48 output_padding=(0,0) padding=(0,0) stride=(4,4) @bias=(48)f32 @weight=(48,48,4,4)f32 $input=138 #138=(1,48,19,19)f32 #139=(1,48,76,76)f32
+Tensor.permute           Tensor.permute_39        1 1 133 140 dims=(0,2,1) $input=133 #133=(1,361,384)f32 #140=(1,384,361)f32
+Tensor.reshape           Tensor.reshape_69        1 1 140 141 shape=(1,384,19,19) $input=140 #140=(1,384,361)f32 #141=(1,384,19,19)f32
+nn.Conv2d                conv2d_6                 1 1 141 142 bias=True dilation=(1,1) groups=1 in_channels=384 kernel_size=(1,1) out_channels=96 padding=(0,0) padding_mode=zeros stride=(1,1) @bias=(96)f32 @weight=(96,384,1,1)f32 $input=141 #141=(1,384,19,19)f32 #142=(1,96,19,19)f32
+nn.ConvTranspose2d       conv_transpose2d_1       1 1 142 143 bias=True dilation=(1,1) groups=1 in_channels=96 kernel_size=(2,2) out_channels=96 output_padding=(0,0) padding=(0,0) stride=(2,2) @bias=(96)f32 @weight=(96,96,2,2)f32 $input=142 #142=(1,96,19,19)f32 #143=(1,96,38,38)f32
+Tensor.permute           Tensor.permute_40        1 1 134 144 dims=(0,2,1) $input=134 #134=(1,361,384)f32 #144=(1,384,361)f32
+Tensor.reshape           Tensor.reshape_70        1 1 144 145 shape=(1,384,19,19) $input=144 #144=(1,384,361)f32 #145=(1,384,19,19)f32
+nn.Conv2d                conv2d_7                 1 1 145 146 bias=True dilation=(1,1) groups=1 in_channels=384 kernel_size=(1,1) out_channels=192 padding=(0,0) padding_mode=zeros stride=(1,1) @bias=(192)f32 @weight=(192,384,1,1)f32 $input=145 #145=(1,384,19,19)f32 #146=(1,192,19,19)f32
+Tensor.permute           Tensor.permute_41        1 1 135 147 dims=(0,2,1) $input=135 #135=(1,361,384)f32 #147=(1,384,361)f32
+Tensor.reshape           Tensor.reshape_71        1 1 147 148 shape=(1,384,19,19) $input=147 #147=(1,384,361)f32 #148=(1,384,19,19)f32
+nn.Conv2d                conv2d_8                 1 1 148 149 bias=True dilation=(1,1) groups=1 in_channels=384 kernel_size=(1,1) out_channels=384 padding=(0,0) padding_mode=zeros stride=(1,1) @bias=(384)f32 @weight=(384,384,1,1)f32 $input=148 #148=(1,384,19,19)f32 #149=(1,384,19,19)f32
+nn.Conv2d                conv2d_9                 1 1 149 150 bias=True dilation=(1,1) groups=1 in_channels=384 kernel_size=(3,3) out_channels=384 padding=(1,1) padding_mode=zeros stride=(2,2) @bias=(384)f32 @weight=(384,384,3,3)f32 $input=149 #149=(1,384,19,19)f32 #150=(1,384,10,10)f32
+nn.Conv2d                conv2d_0                 1 1 139 151 bias=False dilation=(1,1) groups=1 in_channels=48 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @weight=(64,48,3,3)f32 $input=139 #139=(1,48,76,76)f32 #151=(1,64,76,76)f32
+nn.Conv2d                conv2d_1                 1 1 143 152 bias=False dilation=(1,1) groups=1 in_channels=96 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @weight=(64,96,3,3)f32 $input=143 #143=(1,96,38,38)f32 #152=(1,64,38,38)f32
+nn.Conv2d                conv2d_2                 1 1 146 153 bias=False dilation=(1,1) groups=1 in_channels=192 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @weight=(64,192,3,3)f32 $input=146 #146=(1,192,19,19)f32 #153=(1,64,19,19)f32
+nn.Conv2d                conv2d_3                 1 1 150 154 bias=False dilation=(1,1) groups=1 in_channels=384 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @weight=(64,384,3,3)f32 $input=150 #150=(1,384,10,10)f32 #154=(1,64,10,10)f32
+F.relu                   F.relu_184               1 1 154 155 $input=154 #154=(1,64,10,10)f32 #155=(1,64,10,10)f32
+nn.Conv2d                conv2d_10                1 1 155 156 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,3,3)f32 $input=155 #155=(1,64,10,10)f32 #156=(1,64,10,10)f32
+F.relu                   F.relu_185               1 1 156 157 $input=156 #156=(1,64,10,10)f32 #157=(1,64,10,10)f32
+nn.Conv2d                conv2d_11                1 1 157 158 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,3,3)f32 $input=157 #157=(1,64,10,10)f32 #158=(1,64,10,10)f32
+pnnx.Expression          pnnx_expr_9              2 1 158 154 159 expr=add(@0,@1) #158=(1,64,10,10)f32 #154=(1,64,10,10)f32 #159=(1,64,10,10)f32
+F.interpolate            F.interpolate_212        1 1 159 160 align_corners=True mode=bilinear size=(19,19) $input=159 #159=(1,64,10,10)f32 #160=(1,64,19,19)f32
+nn.Conv2d                conv2d_12                1 1 160 161 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(1,1) out_channels=64 padding=(0,0) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,1,1)f32 $input=160 #160=(1,64,19,19)f32 #161=(1,64,19,19)f32
+F.relu                   F.relu_186               1 1 153 162 $input=153 #153=(1,64,19,19)f32 #162=(1,64,19,19)f32
+nn.Conv2d                conv2d_13                1 1 162 163 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,3,3)f32 $input=162 #162=(1,64,19,19)f32 #163=(1,64,19,19)f32
+F.relu                   F.relu_187               1 1 163 164 $input=163 #163=(1,64,19,19)f32 #164=(1,64,19,19)f32
+nn.Conv2d                conv2d_14                1 1 164 165 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,3,3)f32 $input=164 #164=(1,64,19,19)f32 #165=(1,64,19,19)f32
+pnnx.Expression          pnnx_expr_7              3 1 161 165 153 166 expr=add(@0,add(@1,@2)) #161=(1,64,19,19)f32 #165=(1,64,19,19)f32 #153=(1,64,19,19)f32 #166=(1,64,19,19)f32
+F.relu                   F.relu_188               1 1 166 167 $input=166 #166=(1,64,19,19)f32 #167=(1,64,19,19)f32
+nn.Conv2d                conv2d_15                1 1 167 168 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,3,3)f32 $input=167 #167=(1,64,19,19)f32 #168=(1,64,19,19)f32
+F.relu                   F.relu_189               1 1 168 169 $input=168 #168=(1,64,19,19)f32 #169=(1,64,19,19)f32
+nn.Conv2d                conv2d_16                1 1 169 170 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,3,3)f32 $input=169 #169=(1,64,19,19)f32 #170=(1,64,19,19)f32
+pnnx.Expression          pnnx_expr_6              2 1 170 166 171 expr=add(@0,@1) #170=(1,64,19,19)f32 #166=(1,64,19,19)f32 #171=(1,64,19,19)f32
+F.interpolate            F.interpolate_213        1 1 171 172 align_corners=True mode=bilinear size=(38,38) $input=171 #171=(1,64,19,19)f32 #172=(1,64,38,38)f32
+nn.Conv2d                conv2d_17                1 1 172 173 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(1,1) out_channels=64 padding=(0,0) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,1,1)f32 $input=172 #172=(1,64,38,38)f32 #173=(1,64,38,38)f32
+F.relu                   F.relu_190               1 1 152 174 $input=152 #152=(1,64,38,38)f32 #174=(1,64,38,38)f32
+nn.Conv2d                conv2d_18                1 1 174 175 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,3,3)f32 $input=174 #174=(1,64,38,38)f32 #175=(1,64,38,38)f32
+F.relu                   F.relu_191               1 1 175 176 $input=175 #175=(1,64,38,38)f32 #176=(1,64,38,38)f32
+nn.Conv2d                conv2d_19                1 1 176 177 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,3,3)f32 $input=176 #176=(1,64,38,38)f32 #177=(1,64,38,38)f32
+pnnx.Expression          pnnx_expr_4              3 1 173 177 152 178 expr=add(@0,add(@1,@2)) #173=(1,64,38,38)f32 #177=(1,64,38,38)f32 #152=(1,64,38,38)f32 #178=(1,64,38,38)f32
+F.relu                   F.relu_192               1 1 178 179 $input=178 #178=(1,64,38,38)f32 #179=(1,64,38,38)f32
+nn.Conv2d                conv2d_20                1 1 179 180 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,3,3)f32 $input=179 #179=(1,64,38,38)f32 #180=(1,64,38,38)f32
+F.relu                   F.relu_193               1 1 180 181 $input=180 #180=(1,64,38,38)f32 #181=(1,64,38,38)f32
+nn.Conv2d                conv2d_21                1 1 181 182 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,3,3)f32 $input=181 #181=(1,64,38,38)f32 #182=(1,64,38,38)f32
+pnnx.Expression          pnnx_expr_3              2 1 182 178 183 expr=add(@0,@1) #182=(1,64,38,38)f32 #178=(1,64,38,38)f32 #183=(1,64,38,38)f32
+F.interpolate            F.interpolate_214        1 1 183 184 align_corners=True mode=bilinear size=(76,76) $input=183 #183=(1,64,38,38)f32 #184=(1,64,76,76)f32
+nn.Conv2d                conv2d_22                1 1 184 185 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(1,1) out_channels=64 padding=(0,0) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,1,1)f32 $input=184 #184=(1,64,76,76)f32 #185=(1,64,76,76)f32
+F.relu                   F.relu_194               1 1 151 186 $input=151 #151=(1,64,76,76)f32 #186=(1,64,76,76)f32
+nn.Conv2d                conv2d_23                1 1 186 187 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,3,3)f32 $input=186 #186=(1,64,76,76)f32 #187=(1,64,76,76)f32
+F.relu                   F.relu_195               1 1 187 188 $input=187 #187=(1,64,76,76)f32 #188=(1,64,76,76)f32
+nn.Conv2d                conv2d_24                1 1 188 189 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,3,3)f32 $input=188 #188=(1,64,76,76)f32 #189=(1,64,76,76)f32
+pnnx.Expression          pnnx_expr_1              3 1 185 189 151 190 expr=add(@0,add(@1,@2)) #185=(1,64,76,76)f32 #189=(1,64,76,76)f32 #151=(1,64,76,76)f32 #190=(1,64,76,76)f32
+F.relu                   F.relu_196               1 1 190 191 $input=190 #190=(1,64,76,76)f32 #191=(1,64,76,76)f32
+nn.Conv2d                conv2d_25                1 1 191 192 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,3,3)f32 $input=191 #191=(1,64,76,76)f32 #192=(1,64,76,76)f32
+F.relu                   F.relu_197               1 1 192 193 $input=192 #192=(1,64,76,76)f32 #193=(1,64,76,76)f32
+nn.Conv2d                conv2d_26                1 1 193 194 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(3,3) out_channels=64 padding=(1,1) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,3,3)f32 $input=193 #193=(1,64,76,76)f32 #194=(1,64,76,76)f32
+pnnx.Expression          pnnx_expr_0              2 1 194 190 195 expr=add(@0,@1) #194=(1,64,76,76)f32 #190=(1,64,76,76)f32 #195=(1,64,76,76)f32
+F.interpolate            F.interpolate_215        1 1 195 196 align_corners=True mode=bilinear recompute_scale_factor=False scale_factor=(2.0,2.0) $input=195 #195=(1,64,76,76)f32 #196=(1,64,152,152)f32
+nn.Conv2d                conv2d_27                1 1 196 197 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(1,1) out_channels=64 padding=(0,0) padding_mode=zeros stride=(1,1) @bias=(64)f32 @weight=(64,64,1,1)f32 $input=196 #196=(1,64,152,152)f32 #197=(1,64,152,152)f32
+nn.Conv2d                conv2d_28                1 1 197 198 bias=True dilation=(1,1) groups=1 in_channels=64 kernel_size=(3,3) out_channels=32 padding=(1,1) padding_mode=zeros stride=(1,1) @bias=(32)f32 @weight=(32,64,3,3)f32 $input=197 #197=(1,64,152,152)f32 #198=(1,32,152,152)f32
+F.interpolate            F.interpolate_216        1 1 198 199 align_corners=True mode=bilinear size=(266,266) $input=198 #198=(1,32,152,152)f32 #199=(1,32,266,266)f32
+nn.Conv2d                conv2d_29                1 1 199 200 bias=True dilation=(1,1) groups=1 in_channels=32 kernel_size=(3,3) out_channels=32 padding=(1,1) padding_mode=zeros stride=(1,1) @bias=(32)f32 @weight=(32,32,3,3)f32 $input=199 #199=(1,32,266,266)f32 #200=(1,32,266,266)f32
+F.relu                   F.relu_198               1 1 200 201 $input=200 #200=(1,32,266,266)f32 #201=(1,32,266,266)f32
+nn.Conv2d                conv2d_30                1 1 201 202 bias=True dilation=(1,1) groups=1 in_channels=32 kernel_size=(1,1) out_channels=1 padding=(0,0) padding_mode=zeros stride=(1,1) @bias=(1)f32 @weight=(1,32,1,1)f32 $input=201 #201=(1,32,266,266)f32 #202=(1,1,266,266)f32
+F.relu                   F.relu_199               1 1 202 203 $input=202 #202=(1,1,266,266)f32 #203=(1,1,266,266)f32
+torch.squeeze            torch.squeeze_42         1 1 203 204 dim=1 $input=203 #203=(1,1,266,266)f32 #204=(1,266,266)f32
+pnnx.Output              out0                     1 0 204 #204=(1,266,266)f32

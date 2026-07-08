@@ -1,0 +1,2 @@
+model_checkpoint_path: "depth_anything_v2_vits_sim_float32.weights.tf"
+all_model_checkpoint_paths: "depth_anything_v2_vits_sim_float32.weights.tf"
