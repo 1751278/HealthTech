@@ -529,6 +529,7 @@ def navigate():
         # --- Draw Frame ---
         max_conf = 0
         index = -1
+        #Pick the best door (highest confidence) and use that to steer toward the door
         for i, box in enumerate(boxes):
             label           = yolo.names[int(box.cls[0])]
             x1, y1, x2, y2 = map(int, box.xyxy[0])  # bounding box coordinates
@@ -547,16 +548,16 @@ def navigate():
         else:
             door_direction = last_door_direction  # keep going toward the last known door direction if we lose sight of it
         #Call combine steer and use what we have currently to determine the final direction
-
+        combined_direction = combine_steer(direction, door_direction, max_conf, col['c'])
 
        ### Direction should be finalized at this point
         
         if direction > 0:
             audio_state["left_vol"] = 0.0
-            audio_state["right_vol"] = abs(direction)/90.0 # scale volume by how strong the turn is
+            audio_state["right_vol"] = abs(combined_direction)/90.0 # scale volume by how strong the turn is
         else:
             audio_state["right_vol"] = 0.0
-            audio_state["left_vol"] = abs(direction)/90.0 # scale volume by how strong the turn is
+            audio_state["left_vol"] = abs(combined_direction)/90.0 # scale volume by how strong the turn is
 
 
             
@@ -567,12 +568,16 @@ def navigate():
 
         
         start_point = (w//2, h//2)
+
         end_point = (int(math.sin(math.radians(direction)) * 100 + w//2), int(-math.cos(math.radians(direction)) * 100 + h//2))
         cv2.arrowedLine(frame, start_point, end_point, (0, 255, 0), 2)  # draw green arrow for avoidance direction
-        start_point = (w//2, h//2)
+
         end_point = (int(math.sin(math.radians(door_direction)) * 100 + w//2), int(-math.cos(math.radians(door_direction)) * 100 + h//2))
         cv2.arrowedLine(frame, start_point, end_point, (0, 0, 255), 2)  # draws red arrow for door direction
- 
+
+        end_point = (int(math.sin(math.radians(combined_direction)) * 100 + w//2), int(-math.cos(math.radians(combined_direction)) * 100 + h//2))
+        cv2.arrowedLine(frame, start_point, end_point, (255, 0, 0), 2)  # draws blue arrow for door direction
+
         # display camera frame and depth side by side
         out = np.hstack([frame, depth_color]) if depth_color is not None else frame
         cv2.imshow('navigator', out)
