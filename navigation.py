@@ -342,19 +342,19 @@ def get_door_steer(box, frame_width, yolo_names, thresh=0.2):
         return last_door_direction
     return 90
 def combine_steer(obstacle_dir, door_dir, door_confidence, center_blocked):
-    if center_blocked <= BLOCKED_THRESHOLD:
+    if center_blocked <= BLOCKED_THRESHOLD: #If the center of the screen is not blocked sufficiently, then we can trust the door direction more.
         safety_weight = 1.0
-    elif center_blocked >= ALL_BLOCKED_THRESHOLD:
+    elif center_blocked >= ALL_BLOCKED_THRESHOLD: #If the center of the screen is blocked, then we should not trust the door direction at all.
         safety_weight = 0.0
     else:
-        span = ALL_BLOCKED_THRESHOLD - BLOCKED_THRESHOLD
+        span = ALL_BLOCKED_THRESHOLD - BLOCKED_THRESHOLD #So between the two thresholds, we can linearly interpolate the safety weight. The more blocked the center is, the less we trust the door direction.
         safety_weight = 1.0 - (center_blocked - BLOCKED_THRESHOLD) / span
 
     # --- Confidence weight: distrust a stale (undetected) door direction ---
-    confidence_weight = DOOR_STALE_WEIGHT + (1.0 - DOOR_STALE_WEIGHT) * door_confidence
+    confidence_weight = DOOR_STALE_WEIGHT + (1.0 - DOOR_STALE_WEIGHT) * door_confidence #Basically, makes the interval of confidence between 0.25 and 1, rather than 0 to 1. This means that while undetected doors are not trusted, they still factor in a little
 
-    door_weight     = safety_weight * confidence_weight
-    obstacle_weight = 1.0 - door_weight
+    door_weight = safety_weight * confidence_weight #Is the door safe? Is the door detected? Trust the door direction more depending on these factors.
+    obstacle_weight = 1.0 - door_weight #The more we trust the door, the less we trust the obstacle direction. The more we trust the obstacle direction, the less we trust the door.
 
     combined = obstacle_weight * obstacle_dir + door_weight * door_dir
     return max(-90, min(90, combined))
