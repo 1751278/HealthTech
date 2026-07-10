@@ -39,6 +39,7 @@ from ultralytics import YOLO
  
 # --- Models ---
 YOLO_MODEL_PATH    = "YoloModels/DoorFrameModel26.pt" # Using the door frame model so we can try and help navigate Users to the door.
+YOLOV26_MODEL_PATH = "YoloModels/Yolo26n.pt" # Using the door frame model so we can try and help navigate Users to the door.
 DEPTH_MODEL_PATH   = "depthmodels/depth_anything_v2_vits.pth"
 DEPTH_ENCODER      = 'vits'
 DEPTH_FEATURES     = 64
@@ -77,6 +78,8 @@ DEFAULT_DEPTH_INTERVAL = 3
 DOOR_STALE_WEIGHT = 0.25
 
 DOOR_CONFIDENCE_THRESHOLD = 0.5  # minimum confidence to consider a door detection valid
+
+OTHER_CONFIDENCE_THRESHOLD = 0.3  # minimum confidence to consider a non-door detection valid
 
 
 # Color for the final combined steering arrow (BGR)
@@ -146,7 +149,8 @@ cmap   = matplotlib.colormaps.get_cmap(DEPTH_COLORMAP)
 LUT = (cmap(np.arange(256))[:, :3] * 255).astype(np.uint8)[:, ::-1]
 print("loading models...")
 yolo = YOLO(YOLO_MODEL_PATH)
- 
+yolo26 = YOLO(YOLOV26_MODEL_PATH)
+
 depth_model = DepthAnythingV2(
     encoder=DEPTH_ENCODER,
     features=DEPTH_FEATURES,
@@ -334,7 +338,6 @@ def audio_callback(outdata, frames, time_info, status):
 
 def get_door_steer(box, frame_width, yolo_names, thresh=0.2):
     # gets straight line steering to the door
-    print(box.conf.item())
     if box.conf.item() > thresh:
         x1, y1, x2, y2 = map(int, box.xyxy[0])
         center = (int((x1+x2)/2), int((y1+y2)/2))
@@ -389,6 +392,7 @@ def navigate():
     frame_num   = 0
     depth_color = None
     boxes       = []
+    boxes26     = []
 
     # FIX: initialize direction so the arrow doesn't crash before depth runs
     direction = 0.0
@@ -512,7 +516,7 @@ def navigate():
        
         
         
-        # --- Object detection ---
+        # --- Door detection ---
         if frame_num % args.yolo_interval == 0:
             results = yolo(frame, verbose=False)
             boxes   = results[0].boxes
@@ -537,7 +541,7 @@ def navigate():
         for i, box in enumerate(boxes):
             label           = yolo.names[int(box.cls[0])]
             x1, y1, x2, y2 = map(int, box.xyxy[0])  # bounding box coordinates
-            color           = BOX_COLOR_DOOR if 'door' in label else BOX_COLOR_OTHER
+            color           = BOX_COLOR_DOOR
             conf = box.conf.item()
             if conf > max_conf and conf > DOOR_CONFIDENCE_THRESHOLD and 'door' in label:
                 max_conf = conf
@@ -546,11 +550,27 @@ def navigate():
             cv2.putText(frame, label, (x1, y1 - 5),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)  # draw label
  
-        #Get straghtline steering to the door if one is detected with high confidence
+        #Get straightline steering to the door if one is detected with high confidence
         if index != -1:
             door_direction = get_door_steer(boxes[index], w, yolo.names)
         else:
             door_direction = last_door_direction  # keep going toward the last known door direction if we lose sight of it
+
+            
+        # -- Object Detection using yolo26 for desk and chair avoidance. WIP --
+        if frame_num % args.yolo_interval == 0:
+            results26 = yolo26(frame, verbose=False)
+            boxes26   = results26[0].boxes
+        # --- Draw Frame ---
+        for i, box in enumerate(boxes26):
+            label           = yolo26.names[int(box.cls[0])]
+            x1, y1, x2, y2 = map(int, box.xyxy[0])  # bounding box coordinates
+            color           = BOX_COLOR_OTHER
+            conf26 = box.conf.item()
+            if conf26 > OTHER_CONFIDENCE_THRESHOLD:
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)  # draw box
+                cv2.putText(frame, label, (x1, y1 - 5),cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)  # draw label
+
         #Call combine steer and use what we have currently to determine the final direction
         combined_direction = combine_steer(direction, door_direction, max_conf, col['c'])
 
