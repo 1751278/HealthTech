@@ -8,8 +8,10 @@
 # TODO:
 # - Use NCNN TFlight model for depth estimation (faster/more efficient than current DPT) -> make model run faster K
 # - Add text-to-speech output
-# - Need to combine door path and avoidance path for guidance to the door S and E 
-# - Change song please... Or maybe some way to allow user to change it themselves
+# - Need to combine door path and avoidance path for guidance to the door S and E
+#   -Improvements: Door decay (lose confidence over time if we don't see it), make a class or data structure to hold the door state (confidence, last seen, etc.), possibly redesign interpolation of combine_steer
+#   -Possibilities: Incorporate future IMU (gyroscope) data. Pending confirmation...
+# - some way to allow user to change it themselves
 # - try to find a qunatized version of depth model
 # - implement desk and chair avoidance with yolo model 26 S and E 
 #################
@@ -73,6 +75,9 @@ DEFAULT_DEPTH_INTERVAL = 3
 # (i.e. we're relying on a stale last_door_direction). 0 = ignore stale door
 # entirely, 1 = trust it as much as a live detection.
 DOOR_STALE_WEIGHT = 0.25
+
+DOOR_CONFIDENCE_THRESHOLD = 0.5  # minimum confidence to consider a door detection valid
+
 
 # Color for the final combined steering arrow (BGR)
 COMBINED_STEER_COLOR = (0, 255, 255)  # yellow
@@ -487,7 +492,6 @@ def navigate():
 
             # 2. Draw the filled contour on the mask
             cv2.drawContours(mask, [max_contour], -1, 255, -1)
-            print(max_area)
             # 3. Calculate the average BGR color using the mask
             avg_red = cv2.mean(frame, mask=mask)[2]
 
@@ -535,7 +539,7 @@ def navigate():
             x1, y1, x2, y2 = map(int, box.xyxy[0])  # bounding box coordinates
             color           = BOX_COLOR_DOOR if 'door' in label else BOX_COLOR_OTHER
             conf = box.conf.item()
-            if conf > max_conf:
+            if conf > max_conf and conf > DOOR_CONFIDENCE_THRESHOLD and 'door' in label:
                 max_conf = conf
                 index = i
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)  # draw box
@@ -576,7 +580,7 @@ def navigate():
         cv2.arrowedLine(frame, start_point, end_point, (0, 0, 255), 2)  # draws red arrow for door direction
 
         end_point = (int(math.sin(math.radians(combined_direction)) * 100 + w//2), int(-math.cos(math.radians(combined_direction)) * 100 + h//2))
-        cv2.arrowedLine(frame, start_point, end_point, (255, 0, 0), 2)  # draws blue arrow for door direction
+        cv2.arrowedLine(frame, start_point, end_point, (255, 0, 0), 2)  # draws blue arrow for FINAL direction
 
         # display camera frame and depth side by side
         out = np.hstack([frame, depth_color]) if depth_color is not None else frame
