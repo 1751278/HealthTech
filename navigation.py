@@ -505,22 +505,9 @@ def navigate():
                 direction += max_area * avg_red * OBJECT_STEER_SENSITIVITY
                 
             direction = max(-90, min(90, direction))  # clamp to [-90, 90]
-
        
         
-        if direction > 0:
-            audio_state["left_vol"] = 0.0
-            audio_state["right_vol"] = abs(direction)/90.0 # scale volume by how strong the turn is
-        else:
-            audio_state["right_vol"] = 0.0
-            audio_state["left_vol"] = abs(direction)/90.0 # scale volume by how strong the turn is
-
-
-            
-
-        cv2.drawContours(frame, contours, -1, (0, 255, 0), 2)
-        ##############################################
- 
+        
         # --- Object detection ---
         if frame_num % args.yolo_interval == 0:
             results = yolo(frame, verbose=False)
@@ -559,6 +546,25 @@ def navigate():
             door_direction = get_door_steer(boxes[index], w, yolo.names)
         else:
             door_direction = last_door_direction  # keep going toward the last known door direction if we lose sight of it
+        #Call combine steer and use what we have currently to determine the final direction
+
+
+       ### Direction should be finalized at this point
+        
+        if direction > 0:
+            audio_state["left_vol"] = 0.0
+            audio_state["right_vol"] = abs(direction)/90.0 # scale volume by how strong the turn is
+        else:
+            audio_state["right_vol"] = 0.0
+            audio_state["left_vol"] = abs(direction)/90.0 # scale volume by how strong the turn is
+
+
+            
+
+        cv2.drawContours(frame, contours, -1, (0, 255, 0), 2)
+        ##############################################
+ 
+
         
         start_point = (w//2, h//2)
         end_point = (int(math.sin(math.radians(direction)) * 100 + w//2), int(-math.cos(math.radians(direction)) * 100 + h//2))
