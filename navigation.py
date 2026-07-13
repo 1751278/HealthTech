@@ -52,7 +52,7 @@ FRAME_HEIGHT     = 640
 DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
  
 # --- Audio ---
-print("loading audio... check the constants section to change the sound file. MB if it is bad. I just searched no copyright music")
+print("loading audio... check the constants section to change the sound file.")
 AUDIO_DATA, SAMPLE_RATE = sf.read("SoundAssets/jazz.mp3") #CHANGE THIS FOR DIFFERENT SOUND, I FOUND THIS ONLINE IM SORRY
 audio_location = 0  # current position in the audio file (in samples)
 # Audio params for non-blocking sounds
@@ -80,6 +80,12 @@ DOOR_STALE_WEIGHT = 0.25
 DOOR_CONFIDENCE_THRESHOLD = 0.5  # minimum confidence to consider a door detection valid
 
 OTHER_CONFIDENCE_THRESHOLD = 0.3  # minimum confidence to consider a non-door detection valid
+
+door_state = {
+    "last_door_direction": 90,  # last known direction to the door (degrees)
+    "last_door_confidence": 0.0,  # confidence of the last detection
+    "last_seen_frame": -1,
+}
 
 
 # Color for the final combined steering arrow (BGR)
@@ -343,11 +349,11 @@ def get_door_steer(box, frame_width, yolo_names, thresh=0.2):
         center = (int((x1+x2)/2), int((y1+y2)/2))
         direction = -(frame_width/2 - center[0])*STEER_SENSITIVITY_DOOR # positive if door is on the left, negative if on the right
         direction = max(-90, min(90, direction))  # clamp to [-90, 90]
-        global last_door_direction
-        last_door_direction = direction
+        door_state["last_door_direction"] = direction
+        door_state["last_door_confidence"] = box.conf.item()
         return direction
-    if last_door_direction is not None:
-        return last_door_direction
+    if door_state["last_door_direction"] is not None:
+        return door_state["last_door_direction"]
     return 90
 def combine_steer(obstacle_dir, door_dir, door_confidence, center_blocked):
     if center_blocked <= BLOCKED_THRESHOLD: #If the center of the screen is not blocked sufficiently, then we can trust the door direction more.
@@ -359,9 +365,8 @@ def combine_steer(obstacle_dir, door_dir, door_confidence, center_blocked):
         safety_weight = 1.0 - (center_blocked - BLOCKED_THRESHOLD) / span
 
     # --- Confidence weight: distrust a stale (undetected) door direction ---
-    confidence_weight = DOOR_STALE_WEIGHT + (1.0 - DOOR_STALE_WEIGHT) * door_confidence #Basically, makes the interval of confidence between 0.25 and 1, rather than 0 to 1. This means that while undetected doors are not trusted, they still factor in a little
-
-    door_weight = safety_weight * confidence_weight #Is the door safe? Is the door detected? Trust the door direction more depending on these factors.
+    
+    door_weight = safety_weight * door_confidence #Is the door safe? Is the door detected? Trust the door direction more depending on these factors.
     obstacle_weight = 1.0 - door_weight #The more we trust the door, the less we trust the obstacle direction. The more we trust the obstacle direction, the less we trust the door.
 
     combined = obstacle_weight * obstacle_dir + door_weight * door_dir
@@ -396,9 +401,6 @@ def navigate():
 
     # FIX: initialize direction so the arrow doesn't crash before depth runs
     direction = 0.0
-    #last door frame bbox
-    global last_door_direction
-    last_door_direction = 90 # default to right if we haven't seen a door yet
 
     # Initialize smoothed depth for visualization (not used in steering)
     smoothed_depth = None
@@ -553,9 +555,11 @@ def navigate():
         #Get straightline steering to the door if one is detected with high confidence
         if index != -1:
             door_direction = get_door_steer(boxes[index], w, yolo.names)
+            door_state["last_seen_frame"] = frame_num
         else:
-            door_direction = last_door_direction  # keep going toward the last known door direction if we lose sight of it
-
+            door_direction = door_state["last_door_direction"]  # keep going toward the last known door direction if we lose sight of it
+            max_conf = door_state["last_door_confidence"]*math.exp(-0.01*(frame_num - door_state["last_seen_frame"])) #If we don't see a door, use the last known confidence to determine how much to trust the last known direction
+            print(max_conf, " On frame: ", frame_num - door_state["last_seen_frame"], " Orignial confidence: ", door_state["last_door_confidence"])
             
         # -- Object Detection using yolo26 for desk and chair avoidance. WIP --
         if frame_num % args.yolo_interval == 0:
@@ -572,6 +576,8 @@ def navigate():
                 cv2.putText(frame, label, (x1, y1 - 5),cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)  # draw label
 
         #Call combine steer and use what we have currently to determine the final direction
+        
+
         combined_direction = combine_steer(direction, door_direction, max_conf, col['c'])
 
        ### Direction should be finalized at this point
