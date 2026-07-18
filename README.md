@@ -164,9 +164,12 @@ The YOLO model weights (`doorFrameModel.pt`, `doorFrameModel1.pt`, `yolov11n.pt`
 
 **2.** In `navigation.py` combine object avoidance with the navigation to a specific object & also use default yolo model to detect chairs and tables to avoid
 
-**3.** Integrate LLM or reasoning model
+**3.** Integrate LLM or reasoning model -> Sahir
 
-**4.** Memory(Remeber the past locations we have gone to)
+**4.** VSLAM(mapping): Goal is to create a map of a place and esmtimate where you are in that place and save map for future users.
+
+Work Split:
+   - Kenshi and Ethan work on code
 
 **5.** Improve OCR recognition accuracy
 
