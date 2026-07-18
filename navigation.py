@@ -142,7 +142,7 @@ BOX_COLOR_OTHER  = (0,  60, 220)  # BGR — non-door labels
 # Debug: print the 12 zone values every depth frame
 DEBUG_ZONES = True
 # Moving average to smoothen navigation
-direction_history = np.array([0,0,0,0,0])#list with 5 items
+direction_history = np.zeros(5, dtype=np.float64) # list with dtype int64 9
 direction_smoothen = np.array([0.05, 0.05, 0.1, 0.1, 0.7])
 
 # =============================================================================
@@ -642,7 +642,7 @@ def navigate():
 
         #smoothen direction with moving average
         direction_history[:-1] = direction_history[1:]
-        direction_history[-1] = direction
+        direction_history[-1] = combined_direction
         directionArray = direction_history * direction_smoothen
         smooth_direction = np.sum(directionArray)
         ### Direction should be finalized at this point
