@@ -55,10 +55,26 @@ DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
  
 # --- Audio ---
 print("loading audio... check the constants section to change the sound file.")
-AUDIO_DATA, SAMPLE_RATE = sf.read("SoundAssets/jazz.mp3") #CHANGE THIS FOR DIFFERENT SOUND, I FOUND THIS ONLINE IM SORRY
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+AUDIO_FILE = os.path.join(BASE_DIR, "SoundAssets", "jazz.mp3")
+FALLBACK_AUDIO_FILE = os.path.join(BASE_DIR, "SoundAssets", "music.wav")
+
+def load_audio(path, fallback_path):
+    try:
+        data, sr = sf.read(path)
+        return data.astype(np.float32), sr
+    except Exception as exc:
+        print(f"Warning: failed to load audio file '{path}': {exc}")
+        if os.path.exists(fallback_path):
+            print(f"Falling back to WAV file '{fallback_path}'")
+            data, sr = sf.read(fallback_path)
+            return data.astype(np.float32), sr
+        raise
+
+AUDIO_DATA, SAMPLE_RATE = load_audio(AUDIO_FILE, FALLBACK_AUDIO_FILE)
 audio_location = 0  # current position in the audio file (in samples)
 # Audio params for non-blocking sounds
-sample_rate = 44100
+sample_rate = SAMPLE_RATE
 phase = 0.0
 
 # Shared state that the main loop can modify dynamically
