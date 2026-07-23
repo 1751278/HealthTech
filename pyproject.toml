@@ -27,3 +27,8 @@ dependencies = [
     "numpy>=2.4.4",
 ]
 
+[tool.uv.workspace]
+members = [
+    "orbSlam3/orb-slam",
+]
+
