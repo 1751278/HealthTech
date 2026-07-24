@@ -56,6 +56,7 @@ import sys
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
+import torch
 
 try:
     from python_orb_slam3 import ORBExtractor
@@ -118,6 +119,7 @@ class FrameReader:
 # --------------------------------------------------------------------------- #
 class MonocularVO:
     def __init__(self, K, n_features=3000, min_matches=8, ratio=0.75):
+
         self.K = K
         # ORB-SLAM3's own feature extractor (quad-tree keypoint distribution),
         # API-compatible with cv2.ORB_create()'s detectAndCompute().
@@ -125,6 +127,7 @@ class MonocularVO:
         self.bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
         # Define LSH index parameters for binary descriptors
         FLANN_INDEX_LSH = 6
+        FLANN_INDEX_KDTREE = 1
         index_params = dict(
             algorithm=FLANN_INDEX_LSH,
             table_number=6,       # Standard recommendation
@@ -157,7 +160,7 @@ class MonocularVO:
 
     def _detect(self, gray):
         return self.orb.detectAndCompute(gray, None)
-
+    
     def _match(self, des1, des2):
         if des1 is None or des2 is None or len(des1) < 2 or len(des2) < 2:
             return []
@@ -176,6 +179,7 @@ class MonocularVO:
         Processes one frame, updates the accumulated pose, and returns
         (kp, matches) for visualization purposes.
         """
+        
         gray = self.to_gray(frame)
         kp, des = self._detect(gray)
 
@@ -188,6 +192,7 @@ class MonocularVO:
         if len(matches) < self.min_matches:
             self.prev_gray, self.prev_kp, self.prev_des = gray, kp, des
             return kp, matches
+        
 
         pts_prev = np.float32([self.prev_kp[m.queryIdx].pt for m in matches])
         pts_cur = np.float32([kp[m.trainIdx].pt for m in matches])
@@ -262,12 +267,12 @@ def save_matplotlib_plot(trajectory, out_path="trajectory.png"):
 # --------------------------------------------------------------------------- #
 def main():
     parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
-    parser.add_argument("--source", default="1",
+    parser.add_argument("--source", default="vo_videos/vid1.mp4",
                          help="Webcam index (e.g. 0), path to a video file, or path to a folder of image frames")
-    parser.add_argument("--fx", type=float, default=990.57/1.5, help="Focal length x (pixels)")
-    parser.add_argument("--fy", type=float, default=991.07/1.5, help="Focal length y (pixels)")
-    parser.add_argument("--cx", type=float, default=372.83/1.5, help="Principal point x")
-    parser.add_argument("--cy", type=float, default=644.54/1.5, help="Principal point y")
+    parser.add_argument("--fx", type=float, default=990.57/2, help="Focal length x (pixels)")
+    parser.add_argument("--fy", type=float, default=991.07/2, help="Focal length y (pixels)")
+    parser.add_argument("--cx", type=float, default=372.83/2, help="Principal point x")
+    parser.add_argument("--cy", type=float, default=644.54/2, help="Principal point y")
     parser.add_argument("--scale", type=float, default=1.0,
                          help="Per-frame translation scale factor. Monocular VO has no absolute "
                               "scale; supply this from external info (e.g. constant speed * dt) "
@@ -293,7 +298,7 @@ def main():
             ok, frame = reader.read()
             if not ok or frame is None:
                 break
-            frame = cv2.resize(frame, (int(720*1/1.5), int(1280*1/1.5)))  # Resize for faster processing
+            frame = cv2.resize(frame, (int(720*1/2), int(1280*1/2)))  # Resize for faster processing
 
             kp, matches = vo.process_frame(frame, scale=args.scale)
             frame_count += 1
