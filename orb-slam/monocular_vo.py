@@ -131,7 +131,7 @@ class MonocularVO:
             key_size=12,          # Standard recommendation
             multi_probe_level=1,   # Standard recommendation
         )
-        search_params = dict(checks=50)
+        search_params = dict(checks=100)
         # Initialize the matcher with LSH parameters
         self.flann = cv2.FlannBasedMatcher(index_params, search_params)
         self.min_matches = min_matches
@@ -264,10 +264,10 @@ def main():
     parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
     parser.add_argument("--source", default="1",
                          help="Webcam index (e.g. 0), path to a video file, or path to a folder of image frames")
-    parser.add_argument("--fx", type=float, default=1345, help="Focal length x (pixels)")
-    parser.add_argument("--fy", type=float, default=1345, help="Focal length y (pixels)")
-    parser.add_argument("--cx", type=float, default=360/2, help="Principal point x")
-    parser.add_argument("--cy", type=float, default=640/2, help="Principal point y")
+    parser.add_argument("--fx", type=float, default=990.57/1.5, help="Focal length x (pixels)")
+    parser.add_argument("--fy", type=float, default=991.07/1.5, help="Focal length y (pixels)")
+    parser.add_argument("--cx", type=float, default=372.83/1.5, help="Principal point x")
+    parser.add_argument("--cy", type=float, default=644.54/1.5, help="Principal point y")
     parser.add_argument("--scale", type=float, default=1.0,
                          help="Per-frame translation scale factor. Monocular VO has no absolute "
                               "scale; supply this from external info (e.g. constant speed * dt) "
@@ -293,7 +293,7 @@ def main():
             ok, frame = reader.read()
             if not ok or frame is None:
                 break
-            frame = cv2.resize(frame, (360, 640))  # Resize for faster processing
+            frame = cv2.resize(frame, (int(720*1/1.5), int(1280*1/1.5)))  # Resize for faster processing
 
             kp, matches = vo.process_frame(frame, scale=args.scale)
             frame_count += 1
@@ -305,6 +305,7 @@ def main():
                 cv2.putText(vis, f"matches {len(matches)} "
                                     f"| inliers {vo.num_inlier_matches}",
                             (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2)
+                vis = cv2.resize(vis, (360, 640))  # Resize for display window
                 cv2.imshow("Monocular VO - Frame", vis)
 
                 traj_canvas = draw_trajectory_canvas(vo.trajectory)
