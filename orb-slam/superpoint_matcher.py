@@ -39,7 +39,7 @@ class SuperPointMatcher:
         keypoints_cv = [cv2.KeyPoint(x=float(x), y=float(y), size=1.0) for x, y in keypoints_np]
         return keypoints_cv, feats
 
-    def match(self, feats0, feats1, min_confidence: float = 0.0):
+    def match(self, feats0, feats1, min_confidence: float = 0.90):
         """Equivalent to bf.knnMatch(des1, des2, k=2) + the 0.75 ratio test.
 
         LightGlue's raw output is already the confident, mutually-agreed

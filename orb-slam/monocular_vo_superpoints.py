@@ -61,16 +61,6 @@ from lightglue import SuperPoint, LightGlue
 from lightglue.utils import load_image, rbd
 from superpoint_matcher import SuperPointMatcher
 
-try:
-    from python_orb_slam3 import ORBExtractor
-except ImportError as e:
-    raise ImportError(
-        "Could not import 'python_orb_slam3'. Install it with:\n"
-        "    pip install python-orb-slam3\n"
-        "(pre-built wheels are only published for AMD64/x86_64; on other "
-        "architectures you need to build it from source, see the project's "
-        "GitHub page for build instructions)."
-    ) from e
 
 
 # --------------------------------------------------------------------------- #
@@ -126,7 +116,6 @@ class MonocularVO:
         self.K = K
         # ORB-SLAM3's own feature extractor (quad-tree keypoint distribution),
         # API-compatible with cv2.ORB_create()'s detectAndCompute().
-        self.orb = ORBExtractor(n_features=n_features, scale_factor=1.2, n_levels=8)
         self.bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
         self.sp_matcher = SuperPointMatcher(max_keypoints=2048)
         # Define LSH index parameters for binary descriptors
@@ -162,9 +151,6 @@ class MonocularVO:
             return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         return frame
 
-    def _detect(self, gray):
-        return self.orb.detectAndCompute(gray, None)
-    
     def _detect_superpoint(self, frame):
         return self.sp_matcher.detect_and_compute(frame)
     
@@ -188,20 +174,6 @@ class MonocularVO:
         """
         Processes one frame, updates the accumulated pose, and returns
         (kp, matches) for visualization purposes.
-        """
-        """
-        gray = self.to_gray(frame)
-        kp, des = self._detect(gray)
-
-        if self.prev_gray is None:
-            self.prev_gray, self.prev_kp, self.prev_des = gray, kp, des
-            return kp, []
-
-        matches = self._match(self.prev_des, des)
-
-        if len(matches) < self.min_matches:
-            self.prev_gray, self.prev_kp, self.prev_des = gray, kp, des
-            return kp, matches
         """
         #with super points
         gray = self.to_gray(frame)
@@ -254,7 +226,7 @@ def draw_trajectory_canvas(trajectory, canvas_size=600, world_scale=1.0):
     for p in trajectory:
         x, z = float(p[0, 0]), float(p[2, 0])
         px = int(x * world_scale) + cx
-        py = int(z * world_scale) + cy
+        py = int(-z * world_scale) + cy#make z-axis go "up" in the image
         pts.append((px, py))
 
     for i in range(1, len(pts)):

@@ -231,7 +231,7 @@ def draw_trajectory_canvas(trajectory, canvas_size=600, world_scale=1.0):
     for p in trajectory:
         x, z = float(p[0, 0]), float(p[2, 0])
         px = int(x * world_scale) + cx
-        py = int(z * world_scale) + cy
+        py = int(-z * world_scale) + cy #make z-axis go "up" in the image
         pts.append((px, py))
 
     for i in range(1, len(pts)):
@@ -269,10 +269,10 @@ def main():
     parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
     parser.add_argument("--source", default="vo_videos/vid1.mp4",
                          help="Webcam index (e.g. 0), path to a video file, or path to a folder of image frames")
-    parser.add_argument("--fx", type=float, default=990.57/2, help="Focal length x (pixels)")
-    parser.add_argument("--fy", type=float, default=991.07/2, help="Focal length y (pixels)")
-    parser.add_argument("--cx", type=float, default=372.83/2, help="Principal point x")
-    parser.add_argument("--cy", type=float, default=644.54/2, help="Principal point y")
+    parser.add_argument("--fx", type=float, default=990.57/1.5, help="Focal length x (pixels)")
+    parser.add_argument("--fy", type=float, default=991.07/1.5, help="Focal length y (pixels)")
+    parser.add_argument("--cx", type=float, default=372.83/1.5, help="Principal point x")
+    parser.add_argument("--cy", type=float, default=644.54/1.5, help="Principal point y")
     parser.add_argument("--scale", type=float, default=1.0,
                          help="Per-frame translation scale factor. Monocular VO has no absolute "
                               "scale; supply this from external info (e.g. constant speed * dt) "
@@ -298,7 +298,7 @@ def main():
             ok, frame = reader.read()
             if not ok or frame is None:
                 break
-            frame = cv2.resize(frame, (int(720*1/2), int(1280*1/2)))  # Resize for faster processing
+            frame = cv2.resize(frame, (int(720*1/1.5), int(1280*1/1.5)))  # Resize for faster processing
 
             kp, matches = vo.process_frame(frame, scale=args.scale)
             frame_count += 1
