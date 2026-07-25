@@ -262,12 +262,12 @@ def save_matplotlib_plot(trajectory, out_path="trajectory.png"):
 # --------------------------------------------------------------------------- #
 def main():
     parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
-    parser.add_argument("--source", default="vo_videos/vid1.mp4",
+    parser.add_argument("--source", default="1",
                          help="Webcam index (e.g. 0), path to a video file, or path to a folder of image frames")
-    parser.add_argument("--fx", type=float, default=990.57/2, help="Focal length x (pixels)")
-    parser.add_argument("--fy", type=float, default=991.07/2, help="Focal length y (pixels)")
-    parser.add_argument("--cx", type=float, default=372.83/2, help="Principal point x")
-    parser.add_argument("--cy", type=float, default=644.54/2, help="Principal point y")
+    parser.add_argument("--fx", type=float, default=483.30/2, help="Focal length x (pixels)")
+    parser.add_argument("--fy", type=float, default=483.69/2, help="Focal length y (pixels)")
+    parser.add_argument("--cx", type=float, default=360.41/2, help="Principal point x")
+    parser.add_argument("--cy", type=float, default=639.01/2, help="Principal point y")
     parser.add_argument("--scale", type=float, default=1.0,
                          help="Per-frame translation scale factor. Monocular VO has no absolute "
                               "scale; supply this from external info (e.g. constant speed * dt) "

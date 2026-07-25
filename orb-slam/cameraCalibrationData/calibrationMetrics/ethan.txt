@@ -1,0 +1,5 @@
+--- Extracted Intrinsic Fields ---
+Focal Length X (fx): 483.30 px
+Focal Length Y (fy): 483.69 px
+Principal Point X (cx): 360.41 px
+Principal Point Y (cy): 639.01 px

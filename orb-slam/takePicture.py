@@ -20,7 +20,7 @@ while True:
     key = cv2.waitKey(1)
     if key % 256 == 32:  # SPACE pressed
         id = uuid.uuid4()
-        success = cv2.imwrite(f"cameraCalibrationData/kenshiPhoneImg/{id}.jpg", frame)
+        success = cv2.imwrite(f"cameraCalibrationData/ethanPhoneImg/{id}.jpg", frame)
         if success:
             print(f"Image {id} saved!")
         else:

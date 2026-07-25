@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 import glob
 
-CALIBRATION_FOLDER = "cameraCalibrationData/kenshiPhoneImg"  # Update this path to your calibration images folder
+CALIBRATION_FOLDER = "cameraCalibrationData/ethanPhoneImg"  # Update this path to your calibration images folder
 # 1. Define configuration parameters
 # CHECKERBOARD size: (internal_corners_width, internal_corners_height)
 # For an 8x6 square board, the internal corner count is 7x5

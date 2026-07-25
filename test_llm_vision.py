@@ -24,7 +24,7 @@ def main():
     cap = cv2.VideoCapture(source)
     
     camera_name = cap.getBackendName()
-    if not cap.isOpened() or camera_name != "CAMO":
+    if not cap.isOpened():
         print("Camo Studio not detected, trying default camera...")
         cap = cv2.VideoCapture(source - 1)
         if not cap.isOpened():
@@ -40,6 +40,7 @@ def main():
 
     while True:
         ret, frame = cap.read()
+        frame = cv2.resize(frame, (360, 640))  # Resize for display purposes
         if not ret:
             break
 

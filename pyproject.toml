@@ -26,6 +26,7 @@ dependencies = [
     "onnx2tf>=1.28.8",
     "numpy>=2.4.4",
     "dotenv>=0.9.9",
+    "google-genai>=2.14.0",
 ]
 
 [tool.uv.workspace]
