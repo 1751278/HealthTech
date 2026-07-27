@@ -273,7 +273,7 @@ def main():
     parser.add_argument("--fy", type=float, default=483.69/1.5, help="Focal length y (pixels)")
     parser.add_argument("--cx", type=float, default=360.41/1.5, help="Principal point x")
     parser.add_argument("--cy", type=float, default=639.01/1.5, help="Principal point y")
-    parser.add_argument("--scale", type=float, default=0.2,
+    parser.add_argument("--scale", type=float, default=1.5,
                          help="Per-frame translation scale factor. Monocular VO has no absolute "
                               "scale; supply this from external info (e.g. constant speed * dt) "
                               "or leave at 1.0 for a scale-free trajectory shape.")
@@ -292,15 +292,19 @@ def main():
     reader = FrameReader(args.source)
     vo = MonocularVO(K, n_features=args.n_features)
 
+    FRAME_WINDOW = 6
     frame_count = 0
     try:
+        kp, matches = None, None
+        traj_canvas = None
         while True:
             ok, frame = reader.read()
             if not ok or frame is None:
                 break
             frame = cv2.resize(frame, (int(720*1/1.5), int(1280*1/1.5)))  # Resize for faster processing
-
-            kp, matches = vo.process_frame(frame, scale=args.scale)
+            if frame_count % FRAME_WINDOW == 0:
+                kp, matches = vo.process_frame(frame, scale=args.scale)
+                traj_canvas = draw_trajectory_canvas(vo.trajectory)
             frame_count += 1
 
             if not args.no_display:
@@ -313,7 +317,6 @@ def main():
                 vis = cv2.resize(vis, (360, 640))  # Resize for display window
                 cv2.imshow("Monocular VO - Frame", vis)
 
-                traj_canvas = draw_trajectory_canvas(vo.trajectory)
                 cv2.imshow("Monocular VO - Trajectory", traj_canvas)
 
                 key = cv2.waitKey(1) & 0xFF

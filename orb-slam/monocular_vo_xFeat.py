@@ -1,53 +1,3 @@
-"""
-monocular_vo.py
-================
-A monocular Visual Odometry (VO) pipeline that uses the `python-orb-slam3`
-package (https://pypi.org/project/python-orb-slam3/) for feature extraction.
-
-Important: `python-orb-slam3` (pip package `python_orb_slam3`, class
-`ORBExtractor`) only wraps ORB-SLAM3's C++ ORB *feature extractor* -- it is
-not a full SLAM/VO system and has no matcher, pose-estimation, or mapping
-API. Its `ORBExtractor` is a drop-in replacement for `cv2.ORB_create()`: it
-returns the same `cv2.KeyPoint` list + uint8 descriptor array, but uses
-ORB-SLAM3's original extraction code (quad-tree keypoint distribution across
-an image pyramid), which gives more evenly spread keypoints than OpenCV's
-stock ORB. Matching, essential-matrix estimation, and pose recovery below
-still use standard OpenCV, exactly as they would in ORB-SLAM3's own tracking
-front-end.
-
-Install:
-    pip install python-orb-slam3 opencv-python numpy matplotlib
-    (pre-built wheels are AMD64/x86_64 only; other platforms need a source build)
-
-Pipeline per frame:
-    1. Detect ORB keypoints + descriptors with python_orb_slam3.ORBExtractor.
-    2. Match against the previous frame's descriptors (ratio test).
-    3. Estimate the Essential matrix E with RANSAC (needs camera intrinsics K).
-    4. Recover relative rotation R and translation direction t from E.
-    5. Accumulate global pose:  R_global = R * R_global ;  t_global += s * R_global * t
-       (monocular VO cannot recover absolute scale s from a single camera --
-        you either supply it externally, e.g. from wheel odometry/GPS/IMU/known
-        speed, or just visualize the trajectory up to an unknown scale factor.)
-
-Visualization:
-    - A live OpenCV window showing detected keypoints on the current frame.
-    - A live OpenCV window showing the top-down (X-Z) trajectory being drawn.
-    - A final matplotlib plot of the full trajectory, saved to trajectory.png.
-
-Usage
------
-Webcam:
-    python monocular_vo.py --source 0
-
-Video file:
-    python monocular_vo.py --source path/to/video.mp4 --fx 718.856 --fy 718.856 --cx 607.19 --cy 185.22
-
-KITTI-style image sequence folder (numbered .png/.jpg frames):
-    python monocular_vo.py --source path/to/image_folder --fx 718.856 --fy 718.856 --cx 607.19 --cy 185.22
-
-Press ESC in the video window to quit early.
-"""
-
 import argparse
 import glob
 import os
@@ -57,10 +7,7 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
-from lightglue import SuperPoint, LightGlue
-from lightglue.utils import load_image, rbd
-from superpoint_matcher import SuperPointMatcher
-
+from accelerated_features.modules.xfeat import XFeat
 
 
 # --------------------------------------------------------------------------- #
@@ -113,11 +60,15 @@ class FrameReader:
 class MonocularVO:
     def __init__(self, K, n_features=3000, min_matches=8, ratio=0.75):
 
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        # 1. Initialize XFeat
+        self.xfeat = XFeat().to(device).eval()
+
         self.K = K
         # ORB-SLAM3's own feature extractor (quad-tree keypoint distribution),
         # API-compatible with cv2.ORB_create()'s detectAndCompute().
         self.bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
-        self.sp_matcher = SuperPointMatcher(max_keypoints=2048)
         # Define LSH index parameters for binary descriptors
         FLANN_INDEX_LSH = 6
         FLANN_INDEX_KDTREE = 1
@@ -150,12 +101,52 @@ class MonocularVO:
         if frame.ndim == 3:
             return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         return frame
-
-    def _detect_superpoint(self, frame):
-        return self.sp_matcher.detect_and_compute(frame)
     
-    def _match_superpoint(self, feats0, feats1, min_confidence=0.0):
-        return self.sp_matcher.match(feats0, feats1, min_confidence=min_confidence)
+    def _keypoints_to_cv2(self, keypoints):
+        """Convert a Tensor/NumPy array of keypoints (N, 2) to a list of cv2.KeyPoint."""
+        if isinstance(keypoints, torch.Tensor):
+            keypoints = keypoints.cpu().numpy()
+        return [cv2.KeyPoint(x=float(pt[0]), y=float(pt[1]), size=1.0) for pt in keypoints]
+    
+    def _matches_to_cv2(self, matches_indices):
+        """Convert matching indices to a list of cv2.DMatch."""
+        
+        # 1. If matches_indices is a tuple/list of 2 arrays (idx0, idx1), stack them into (N, 2)
+        if isinstance(matches_indices, (tuple, list)) and len(matches_indices) == 2:
+            idx0, idx1 = matches_indices
+            if isinstance(idx0, torch.Tensor):
+                matches_indices = torch.stack([idx0, idx1], dim=-1)
+            else:
+                matches_indices = np.stack([idx0, idx1], axis=-1)
+
+        # 2. Convert PyTorch Tensor to NumPy
+        if isinstance(matches_indices, torch.Tensor):
+            matches_indices = matches_indices.cpu().numpy()
+
+        # 3. Handle shape (2, N) -> transpose to (N, 2)
+        if matches_indices.ndim == 2 and matches_indices.shape[0] == 2 and matches_indices.shape[1] != 2:
+            matches_indices = matches_indices.T
+
+        # 4. If shape is (N, 3) or higher (contains scores), keep only the first two columns (idx0, idx1)
+        if matches_indices.ndim == 2 and matches_indices.shape[1] > 2:
+            matches_indices = matches_indices[:, :2]
+
+        # 5. Build OpenCV DMatch objects
+        cv2_matches = []
+        for idx0, idx1 in matches_indices:
+            match = cv2.DMatch(_queryIdx=int(idx0), _trainIdx=int(idx1), _distance=0.0)
+            cv2_matches.append(match)
+            
+        return cv2_matches
+    
+    def _detect_xFeat(self, frame):
+        output = self.xfeat.detectAndCompute(frame, top_k=4096)[0]
+        kpts = self._keypoints_to_cv2(output['keypoints'])
+        return kpts, output['descriptors']
+    
+    def _match_xFeat(self, feats0, feats1):
+        match = self.xfeat.match(feats0, feats1)
+        return self._matches_to_cv2(match)
     
     def _match(self, des1, des2):
         if des1 is None or des2 is None or len(des1) < 2 or len(des2) < 2:
@@ -177,13 +168,13 @@ class MonocularVO:
         """
         #with super points
         gray = self.to_gray(frame)
-        kp, feats = self._detect_superpoint(frame)
+        kp, feats = self._detect_xFeat(frame)
 
         if self.prev_gray is None:
             self.prev_gray, self.prev_kp, self.prev_feats = gray, kp, feats
             return kp, []
         
-        matches = self._match_superpoint(self.prev_feats, feats)
+        matches = self._match_xFeat(self.prev_feats, feats)
 
         if len(matches) < self.min_matches:
             self.prev_gray, self.prev_kp, self.prev_feats = gray, kp, feats

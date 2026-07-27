@@ -5,14 +5,19 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "gdown>=6.1.0",
+    "kornia>=0.8.3",
     "lightglue",
     "matplotlib>=3.11.1",
     "numpy>=1.26.4",
-    "opencv-python>=4.11.0.86",
+    "opencv-contrib-python>=4.11.0.86",
+    "poselib>=2.0.5",
+    "pyserial>=3.5",
     "python-orb-slam3>=0.1.1",
     "scipy>=1.17.1",
     "torch>=2.13.0",
     "torchvision>=0.28.0",
+    "tqdm>=4.70.0",
 ]
 
 [tool.uv.sources]
