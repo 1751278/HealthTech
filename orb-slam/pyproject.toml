@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "gdown>=6.1.0",
+    "keyboard>=0.13.5",
     "kornia>=0.8.3",
     "lightglue",
     "matplotlib>=3.11.1",
