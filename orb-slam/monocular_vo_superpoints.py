@@ -262,7 +262,7 @@ def save_matplotlib_plot(trajectory, out_path="trajectory.png"):
 # --------------------------------------------------------------------------- #
 def main():
     parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
-    parser.add_argument("--source", default="vo_videos/vid2.mp4",
+    parser.add_argument("--source", default="vo_videos/vid1.mp4",
                          help="Webcam index (e.g. 0), path to a video file, or path to a folder of image frames")
     parser.add_argument("--fx", type=float, default=483.30/1.5, help="Focal length x (pixels)")
     parser.add_argument("--fy", type=float, default=483.69/1.5, help="Focal length y (pixels)")
