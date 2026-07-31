@@ -8,8 +8,30 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 from accelerated_features.modules.xfeat import XFeat
+#A KeyFrame, storing all the data from a single frame.
+class KeyFrame:
+    def __init__(
+        self,
+        id,
+        frame_number,
+        image,
+        pose_R,
+        pose_T,
+        keypoints,
+        descriptors,
+    ):
+        self.id = id
 
+        self.frame_number = frame_number
 
+        self.image = image.copy()
+
+        self.keypoints = keypoints
+
+        self.descriptors = descriptors
+        self.global_descriptor = descriptors.mean(dim=0) #Gets the mean of the descriptors
+        self.pose_R = pose_R.copy() #Rotation
+        self.pose_T = pose_T.copy() #Translation
 # --------------------------------------------------------------------------- #
 # Frame source abstraction: webcam index, video file, or folder of images
 # --------------------------------------------------------------------------- #
@@ -88,6 +110,10 @@ class MonocularVO:
         self.prev_kp = None
         self.prev_feats = None
 
+        self.prev_keyframe = None
+        self.keyframes = [] #stores all the keyframes in this list, to be looked out during loop closure checks
+        self.next_keyframe_id = 0
+
         self.cur_R = np.eye(3)
         self.cur_t = np.zeros((3, 1))
 
@@ -142,7 +168,7 @@ class MonocularVO:
     def _detect_xFeat(self, frame):
         output = self.xfeat.detectAndCompute(frame, top_k=4096)[0]
         kpts = self._keypoints_to_cv2(output['keypoints'])
-        return kpts, output['descriptors']
+        return kpts, output
     
     def _match_xFeat(self, feats0, feats1):
         match = self.xfeat.match(feats0, feats1)
@@ -160,20 +186,84 @@ class MonocularVO:
             if m.distance < self.ratio * n.distance:
                 good.append(m)
         return good
+    def _create_keyframe(self, frame_count, frame,kp,feats):
+        kf = KeyFrame(self.next_keyframe_id,frame_count,frame,self.cur_R,self.cur_t,kp,feats)
+        self.keyframes.append(kf)
+        self.prev_keyframe = kf
+        self.next_keyframe_id += 1
+    def _process_keyframes(self,n_candidates = 5, similarity_thresh = 0.85): #Compares and returns the best "candidates" for loop closure with a basic comparison algorithm as to not completely overload a system
+        current_frame = self.prev_keyframe
+        candidates = []
 
-    def process_frame(self, frame, scale=1.0):
+        for kf in self.keyframes:
+            if current_frame.id - kf.id < 50: #Prevents frames from too early on to be considered, also blocks the current frame from being compared to itself.
+                continue
+            score = cosine_similarity(
+                current_frame.global_descriptor,
+                kf.global_descriptor
+            )
+            if score >= similarity_thresh:
+                candidates.append((score, kf))
+        
+        candidates.sort(key=lambda x: x[0],reverse=True) #Sort by score, highest go in lowest index
+        return candidates[:n_candidates]
+    def _process_candidates(self,candidates):
+        current_frame = self.prev_keyframe #Grab the current keyframe
+        for (score, candidate) in candidates:
+            matches = self._match_xFeat(
+                candidate.descriptors,
+                current_frame.descriptors
+            )
+            if len(matches) < 100:
+                continue
+            pts_old = np.float32([candidate.keypoints[m.queryIdx].pt for m in matches])
+
+            pts_new = np.float32([current_frame.keypoints[m.trainIdx].pt for m in matches])
+            E, mask = cv2.findEssentialMat(
+                pts_new,
+                pts_old,
+                self.K,
+                method=cv2.RANSAC,
+                prob=0.999,
+                threshold=1.0
+            )
+            if E is None:
+                continue
+            num_inliers, R, t, pose_mask = cv2.recoverPose(
+                E,
+                pts_new,
+                pts_old,
+                self.K,
+                mask=mask
+            )
+
+            ratio = num_inliers / len(matches)
+
+            if num_inliers > 150 and ratio > 0.5:
+
+                print(
+                    f"LOOP FOUND! "
+                    f"KF {current_frame.id} -> KF {candidate.id} "
+                    f"({num_inliers}/{len(matches)})"
+                )
+
+                return candidate, R, t
+
+        return None
+
+    def process_frame(self, frame, frame_count, scale=1.0):
         """
         Processes one frame, updates the accumulated pose, and returns
         (kp, matches) for visualization purposes.
         """
         #with super points
         gray = self.to_gray(frame)
-        kp, feats = self._detect_xFeat(frame)
-
+        kp, output = self._detect_xFeat(gray)
+        feats = output['descriptors']
         if self.prev_gray is None:
             self.prev_gray, self.prev_kp, self.prev_feats = gray, kp, feats
             return kp, []
-        
+
         matches = self._match_xFeat(self.prev_feats, feats)
 
         if len(matches) < self.min_matches:
@@ -200,10 +290,45 @@ class MonocularVO:
             self.cur_R = R @ self.cur_R
             self.trajectory.append(self.cur_t.copy())
 
+        #Create new keyframes and store them
+        if len(self.keyframes) > 0:
+            translation = np.linalg.norm(
+                self.cur_t - self.prev_keyframe.pose_T
+            )
+            R_rel = self.cur_R @ self.prev_keyframe.pose_R.T
+
+            trace = np.trace(R_rel)
+
+            # Prevents errors
+            value = np.clip((trace - 1.0) / 2.0, -1.0, 1.0)
+
+            rotation = np.degrees(np.arccos(value)) #Rotation in degrees
+
+ 
+            if translation > 0.6 or rotation > 15: #If large enough change, then make a new keyframe (Translation may be unreliable at the moment, so too is rotation, but to a smaller degree)
+                print("Keyframe created: ", self.next_keyframe_id, " translation: ", translation, " rotation: ", int(rotation))
+                self._create_keyframe(frame_count,frame,kp,feats)
+                candidates = self._process_keyframes()
+                if candidates:
+                    result = self._process_candidates(candidates)
+        else:
+            print("Keyframe created: ", self.next_keyframe_id)
+            self._create_keyframe(frame_count,frame,kp,feats)
+
+
+        
+
         self.prev_gray, self.prev_kp, self.prev_feats = gray, kp, feats
         return kp, matches
+# --------------------------------------------------------------------------- #
+# Additional Math Helper Functions
+# --------------------------------------------------------------------------- #
+def cosine_similarity(a, b): #Returns a float from -1 -> 1, with 1 meaning identical, and -1 meaning opposite
 
+    a = a / np.linalg.norm(a)
+    b = b / np.linalg.norm(b)
 
+    return np.dot(a, b)
 # --------------------------------------------------------------------------- #
 # Visualization helpers
 # --------------------------------------------------------------------------- #
@@ -286,7 +411,7 @@ def main():
                 break
             frame = cv2.resize(frame, (int(720*1/1.5), int(1280*1/1.5)))  # Resize for faster processing
 
-            kp, matches = vo.process_frame(frame, scale=args.scale)
+            kp, matches = vo.process_frame(frame, frame_count, scale=args.scale,)
             frame_count += 1
 
             if not args.no_display:
