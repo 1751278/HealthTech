@@ -1,10 +1,14 @@
 import argparse
 import glob
 import os
+import re
 import sys
 import threading
 import cv2
 import numpy as np
+import matplotlib
+# Set non-interactive backend to avoid needing a Tk main loop
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import torch
 import serial
@@ -141,6 +145,9 @@ class MonocularVO:
         self.cur_t = np.zeros((3, 1))
 
         self.imu_angle = []
+        self.imu_offset = []
+        with is_connected_lock:
+            self.imu_offset = imu_data
 
         # trajectory[i] is the 3x1 camera position at step i (arbitrary scale
         # unless an external scale is supplied every frame)
@@ -155,7 +162,7 @@ class MonocularVO:
     
     def _get_imu_data(self):
         with imu_lock:
-            self.imu_angle = imu_data
+            self.imu_angle = [imu_data[0], imu_data[1], -(imu_data[2] - self.imu_offset[2])]
 
     def _convert_to_R(self, angles):
         return Rot.from_euler("xzy", angles, degrees=True).as_matrix()
@@ -214,7 +221,7 @@ class MonocularVO:
         if self.num_inlier_matches >= self.min_matches:
             self.cur_t = self.cur_t + scale * (self.cur_R @ t)
 
-            #print(np.asarray(self.cur_t, dtype=np.float64).reshape(3))# print 3d position 
+            print(np.asarray(self.cur_t, dtype=np.float64).reshape(3))# print 3d position 
 
             #self.cur_R = R @ self.cur_R
             self._get_imu_data()
@@ -273,30 +280,45 @@ def save_matplotlib_plot(trajectory, out_path="trajectory.png"):
 # Main
 # --------------------------------------------------------------------------- #
 TRAJECTORY = None
-def main_loop():
-    parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
-    parser.add_argument("--source", default="vo_videos/vid2.mp4",
-                         help="Webcam index (e.g. 0), path to a video file, or path to a folder of image frames")
-    parser.add_argument("--fx", type=float, default=483.30/2.0, help="Focal length x (pixels)")
-    parser.add_argument("--fy", type=float, default=483.69/2.0, help="Focal length y (pixels)")
-    parser.add_argument("--cx", type=float, default=360.41/2.0, help="Principal point x")
-    parser.add_argument("--cy", type=float, default=639.01/2.0, help="Principal point y")
-    parser.add_argument("--scale", type=float, default=0.2,
-                         help="Per-frame translation scale factor. Monocular VO has no absolute "
-                              "scale; supply this from external info (e.g. constant speed * dt) "
-                              "or leave at 1.0 for a scale-free trajectory shape.")
-    parser.add_argument("--n_features", type=int, default=3000, help="Max ORB features per frame")
-    parser.add_argument("--no_display", action="store_true",
-                         help="Disable live OpenCV windows (useful for headless runs)")
-    parser.add_argument("--out", default="trajectory.png", help="Output path for the final trajectory plot")
-    args = parser.parse_args()
+CALIBRATION_PATH = "cameraCalibrationData/calibrationMetrics/kenshi.txt"
+CALIBRATION_VALS = []
+with open(CALIBRATION_PATH, "r") as file:
+    for line in file:
+        # Regex to find integers and floating-point numbers
+        pattern = r'[-+]?\d*\.\d+|\d+'
+        if re.findall(pattern, line):
+            CALIBRATION_VALS.append(float(re.findall(pattern, line)[0]))
+print(CALIBRATION_VALS)
 
+parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
+parser.add_argument("--source", default="1",
+                        help="Webcam index (e.g. 0), path to a video file, or path to a folder of image frames")
+parser.add_argument("--fx", type=float, default=CALIBRATION_VALS[0]/2.0, help="Focal length x (pixels)")
+parser.add_argument("--fy", type=float, default=CALIBRATION_VALS[1]/2.0, help="Focal length y (pixels)")
+parser.add_argument("--cx", type=float, default=CALIBRATION_VALS[2]/2.0, help="Principal point x")
+parser.add_argument("--cy", type=float, default=CALIBRATION_VALS[3]/2.0, help="Principal point y")
+parser.add_argument("--scale", type=float, default=1.0,
+                        help="Per-frame translation scale factor. Monocular VO has no absolute "
+                            "scale; supply this from external info (e.g. constant speed * dt) "
+                            "or leave at 1.0 for a scale-free trajectory shape.")
+parser.add_argument("--n_features", type=int, default=3000, help="Max ORB features per frame")
+parser.add_argument("--no_display", action="store_true",
+                        help="Disable live OpenCV windows (useful for headless runs)")
+parser.add_argument("--out", default="trajectory.png", help="Output path for the final trajectory plot")
+
+args = parser.parse_args()
+def main_loop():
     K = np.array([[args.fx, 0, args.cx],
                   [0, args.fy, args.cy],
                   [0, 0, 1]], dtype=np.float64)
 
     print("Camera intrinsics K:\n", K)
 
+    imu_connected = False
+    while imu_connected == False:
+        with is_connected_lock:
+            imu_connected = is_connected_imu
+        
     reader = FrameReader(args.source)
     vo = MonocularVO(K, n_features=args.n_features)
 
@@ -347,7 +369,8 @@ def main_loop():
 
     print(f"Total frames processed: {frame_count}")
     print(f"Trajectory points: {len(vo.trajectory)}")
-
+    TRAJECTORY = vo.trajectory
+    save_matplotlib_plot(TRAJECTORY, out_path=args.out)
 
 if __name__ == "__main__":
     main_thread = threading.Thread(target=main_loop)
@@ -355,5 +378,3 @@ if __name__ == "__main__":
 
     imu_thread = threading.Thread(target=IMU_READER, args=(main_thread,))
     imu_thread.start()
-
-    #save_matplotlib_plot(TRAJECTORY, out_path=args.out)
