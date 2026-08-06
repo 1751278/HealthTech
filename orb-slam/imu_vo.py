@@ -1,62 +1,15 @@
-"""
-monocular_vo.py
-================
-A monocular Visual Odometry (VO) pipeline that uses the `python-orb-slam3`
-package (https://pypi.org/project/python-orb-slam3/) for feature extraction.
-
-Important: `python-orb-slam3` (pip package `python_orb_slam3`, class
-`ORBExtractor`) only wraps ORB-SLAM3's C++ ORB *feature extractor* -- it is
-not a full SLAM/VO system and has no matcher, pose-estimation, or mapping
-API. Its `ORBExtractor` is a drop-in replacement for `cv2.ORB_create()`: it
-returns the same `cv2.KeyPoint` list + uint8 descriptor array, but uses
-ORB-SLAM3's original extraction code (quad-tree keypoint distribution across
-an image pyramid), which gives more evenly spread keypoints than OpenCV's
-stock ORB. Matching, essential-matrix estimation, and pose recovery below
-still use standard OpenCV, exactly as they would in ORB-SLAM3's own tracking
-front-end.
-
-Install:
-    pip install python-orb-slam3 opencv-python numpy matplotlib
-    (pre-built wheels are AMD64/x86_64 only; other platforms need a source build)
-
-Pipeline per frame:
-    1. Detect ORB keypoints + descriptors with python_orb_slam3.ORBExtractor.
-    2. Match against the previous frame's descriptors (ratio test).
-    3. Estimate the Essential matrix E with RANSAC (needs camera intrinsics K).
-    4. Recover relative rotation R and translation direction t from E.
-    5. Accumulate global pose:  R_global = R * R_global ;  t_global += s * R_global * t
-       (monocular VO cannot recover absolute scale s from a single camera --
-        you either supply it externally, e.g. from wheel odometry/GPS/IMU/known
-        speed, or just visualize the trajectory up to an unknown scale factor.)
-
-Visualization:
-    - A live OpenCV window showing detected keypoints on the current frame.
-    - A live OpenCV window showing the top-down (X-Z) trajectory being drawn.
-    - A final matplotlib plot of the full trajectory, saved to trajectory.png.
-
-Usage
------
-Webcam:
-    python monocular_vo.py --source 0
-
-Video file:
-    python monocular_vo.py --source path/to/video.mp4 --fx 718.856 --fy 718.856 --cx 607.19 --cy 185.22
-
-KITTI-style image sequence folder (numbered .png/.jpg frames):
-    python monocular_vo.py --source path/to/image_folder --fx 718.856 --fy 718.856 --cx 607.19 --cy 185.22
-
-Press ESC in the video window to quit early.
-"""
-
 import argparse
 import glob
 import os
 import sys
-
+import threading
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
+import serial
+import time
+from scipy.spatial.transform import Rotation as Rot
 
 try:
     from python_orb_slam3 import ORBExtractor
@@ -68,7 +21,6 @@ except ImportError as e:
         "architectures you need to build it from source, see the project's "
         "GitHub page for build instructions)."
     ) from e
-
 
 # --------------------------------------------------------------------------- #
 # Frame source abstraction: webcam index, video file, or folder of images
@@ -114,6 +66,47 @@ class FrameReader:
             self.cap.release()
 
 
+# IMU reading loop
+imu_data = None
+imu_lock = threading.Lock()
+is_connected_imu = False
+is_connected_lock = threading.Lock()
+
+def IMU_READER(main_thread):
+    COM_PORT = 'COM17' 
+    BAUD_RATE = 115200
+
+    print(f"Connecting to ESP32 on {COM_PORT}...")
+    global is_connected_imu
+    try:
+        # Open the serial port connection
+        ser = serial.Serial(COM_PORT, BAUD_RATE, timeout=1)
+        time.sleep(2) # Allow connection to settle
+        print("Connected successfully! Listening for data...")
+        with is_connected_lock:
+            is_connected_imu = True
+        global imu_data
+        while True:
+            if ser.in_waiting > 0:
+                # Read line, decode bytes to string, and strip extra whitespaces/newlines
+                raw_data = ser.readline()
+                decoded_data = raw_data.decode('utf-8', errors='ignore').strip()
+                split_data = decoded_data.split("/")
+
+                with imu_lock:
+                    imu_data = [float(split_data[0]), float(split_data[1]), float(split_data[2])]
+            if main_thread.is_alive() is not True:
+                break
+    except serial.SerialException as e:
+        print(f"Error connecting to serial port: {e}")
+    except KeyboardInterrupt:
+        print("\nDisconnecting...")
+    finally:
+        with is_connected_lock:
+            is_connected_imu = "Fail"
+        if 'ser' in locals() and ser.is_open:
+            ser.close()
+            print("Serial port closed.")
 # --------------------------------------------------------------------------- #
 # Core monocular VO
 # --------------------------------------------------------------------------- #
@@ -147,6 +140,8 @@ class MonocularVO:
         self.cur_R = np.eye(3)
         self.cur_t = np.zeros((3, 1))
 
+        self.imu_angle = []
+
         # trajectory[i] is the 3x1 camera position at step i (arbitrary scale
         # unless an external scale is supplied every frame)
         self.trajectory = [self.cur_t.copy()]
@@ -157,7 +152,14 @@ class MonocularVO:
         if frame.ndim == 3:
             return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         return frame
+    
+    def _get_imu_data(self):
+        with imu_lock:
+            self.imu_angle = imu_data
 
+    def _convert_to_R(self, angles):
+        return Rot.from_euler("xzy", angles, degrees=True).as_matrix()
+    
     def _detect(self, gray):
         return self.orb.detectAndCompute(gray, None)
     
@@ -212,9 +214,11 @@ class MonocularVO:
         if self.num_inlier_matches >= self.min_matches:
             self.cur_t = self.cur_t + scale * (self.cur_R @ t)
 
-            print(np.asarray(self.cur_t, dtype=np.float64).reshape(3))# print 3d position 
+            #print(np.asarray(self.cur_t, dtype=np.float64).reshape(3))# print 3d position 
 
-            self.cur_R = R @ self.cur_R
+            #self.cur_R = R @ self.cur_R
+            self._get_imu_data()
+            self.cur_R = self._convert_to_R(self.imu_angle)# from imu
             self.trajectory.append(self.cur_t.copy())
 
         self.prev_gray, self.prev_kp, self.prev_des = gray, kp, des
@@ -268,7 +272,8 @@ def save_matplotlib_plot(trajectory, out_path="trajectory.png"):
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
-def main():
+TRAJECTORY = None
+def main_loop():
     parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
     parser.add_argument("--source", default="vo_videos/vid2.mp4",
                          help="Webcam index (e.g. 0), path to a video file, or path to a folder of image frames")
@@ -301,6 +306,12 @@ def main():
         kp, matches = None, None
         traj_canvas = None
         while True:
+            with is_connected_lock:
+                if is_connected_imu == False:
+                    continue
+                elif is_connected_imu == "Fail":
+                    break
+
             ok, frame = reader.read()
             if not ok or frame is None:
                 break
@@ -336,8 +347,13 @@ def main():
 
     print(f"Total frames processed: {frame_count}")
     print(f"Trajectory points: {len(vo.trajectory)}")
-    save_matplotlib_plot(vo.trajectory, out_path=args.out)
 
 
 if __name__ == "__main__":
-    main()
+    main_thread = threading.Thread(target=main_loop)
+    main_thread.start()
+
+    imu_thread = threading.Thread(target=IMU_READER, args=(main_thread,))
+    imu_thread.start()
+
+    #save_matplotlib_plot(TRAJECTORY, out_path=args.out)
