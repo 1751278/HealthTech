@@ -207,52 +207,8 @@ class MonocularVO:
         
         candidates.sort(key=lambda x: x[0],reverse=True) #Sort by score, highest go in lowest index
         return candidates[:n_candidates]
-    def _process_candidates(self,candidates):
-        current_frame = self.prev_keyframe #Grab the current keyframe
-        for (score, candidate) in candidates:
-            matches = self._match_xFeat(
-                candidate.descriptors,
-                current_frame.descriptors
-            )
-            if len(matches) < 100:
-                continue
-            pts_old = np.float32([candidate.keypoints[m.queryIdx].pt for m in matches])
-
-            pts_new = np.float32([current_frame.keypoints[m.trainIdx].pt for m in matches])
-            E, mask = cv2.findEssentialMat(
-                pts_new,
-                pts_old,
-                self.K,
-                method=cv2.RANSAC,
-                prob=0.999,
-                threshold=1.0
-            )
-            if E is None:
-                continue
-            num_inliers, R, t, pose_mask = cv2.recoverPose(
-                E,
-                pts_new,
-                pts_old,
-                self.K,
-                mask=mask
-            )
-
-            ratio = num_inliers / len(matches)
-            
-            if num_inliers > 150 and ratio > 0.5:
-
-                print(
-                    f"LOOP FOUND! "
-                    f"KF {current_frame.id} -> KF {candidate.id} "
-                    f"({num_inliers}/{len(matches)})"
-                )
-
-                return candidate, R, t
-
-        return None
     def _update_trajectory(self, candidate):
         #How off is it
-        translation_error = candidate.pose_T - self.cur_t
         R_error = candidate.pose_R @ self.cur_R
         for kf in self.keyframes:
 
@@ -294,6 +250,50 @@ class MonocularVO:
         self.cur_R = self.keyframes[-1].pose_R.copy()
                 
         
+    def _process_candidates(self,candidates):
+        current_frame = self.prev_keyframe #Grab the current keyframe
+        for (score, candidate) in candidates:
+            matches = self._match_xFeat(
+                candidate.descriptors,
+                current_frame.descriptors
+            )
+            if len(matches) < 100:
+                continue
+            pts_old = np.float32([candidate.keypoints[m.queryIdx].pt for m in matches])
+
+            pts_new = np.float32([current_frame.keypoints[m.trainIdx].pt for m in matches])
+            E, mask = cv2.findEssentialMat(
+                pts_new,
+                pts_old,
+                self.K,
+                method=cv2.RANSAC,
+                prob=0.999,
+                threshold=1.0
+            )
+            if E is None:
+                continue
+            num_inliers, R, t, pose_mask = cv2.recoverPose(
+                E,
+                pts_new,
+                pts_old,
+                self.K,
+                mask=mask
+            )
+
+            ratio = num_inliers / len(matches)
+
+            if num_inliers > 150 and ratio > 0.5:
+
+                print(
+                    f"LOOP FOUND! "
+                    f"KF {current_frame.id} -> KF {candidate.id} "
+                    f"({num_inliers}/{len(matches)})"
+                )
+
+                return candidate, R, t
+
+        return None
+
     def process_frame(self, frame, frame_count, scale=1.0):
         """
         Processes one frame, updates the accumulated pose, and returns
@@ -354,7 +354,6 @@ class MonocularVO:
                 candidates = self._process_keyframes()
                 if candidates:
                     result = self._process_candidates(candidates)
-
         else:
             print("Keyframe created: ", self.next_keyframe_id)
             self._create_keyframe(frame_count,frame,kp,feats)
@@ -365,7 +364,7 @@ class MonocularVO:
         self.prev_gray, self.prev_kp, self.prev_feats = gray, kp, feats
         return kp, matches
 # --------------------------------------------------------------------------- #
-# Additional Math Helper Functions, for basic evaluation
+# Additional Math Helper Functions
 # --------------------------------------------------------------------------- #
 def cosine_similarity(a, b): #Returns a float from -1 -> 1, with 1 meaning identical, and -1 meaning opposite
 
@@ -428,7 +427,7 @@ def main():
     parser.add_argument("--fy", type=float, default=483.69/1.5, help="Focal length y (pixels)")
     parser.add_argument("--cx", type=float, default=360.41/1.5, help="Principal point x")
     parser.add_argument("--cy", type=float, default=639.01/1.5, help="Principal point y")
-    parser.add_argument("--scale", type=float, default=1.0,
+    parser.add_argument("--scale", type=float, default=0.2,
                          help="Per-frame translation scale factor. Monocular VO has no absolute "
                               "scale; supply this from external info (e.g. constant speed * dt) "
                               "or leave at 1.0 for a scale-free trajectory shape.")
