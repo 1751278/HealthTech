@@ -238,7 +238,7 @@ class MonocularVO:
             )
 
             ratio = num_inliers / len(matches)
-
+            
             if num_inliers > 150 and ratio > 0.5:
 
                 print(
@@ -250,7 +250,50 @@ class MonocularVO:
                 return candidate, R, t
 
         return None
+    def _update_trajectory(self, candidate):
+        #How off is it
+        translation_error = candidate.pose_T - self.cur_t
+        R_error = candidate.pose_R @ self.cur_R
+        for kf in self.keyframes:
 
+            if kf.id > candidate.id:
+
+                relative = (
+                    kf.pose_T -
+                    candidate.pose_T
+                )
+
+                relative = R_error @ relative
+
+                kf.pose_T = (
+                    candidate.pose_T +
+                    relative
+                )
+
+                kf.pose_R = (
+                    R_error @
+                    kf.pose_R
+                )
+        for i in range(candidate.frame_number,len(self.trajectory)):
+
+            relative = (
+                self.trajectory[i]
+                -
+                candidate.pose_T
+            )
+
+            relative = R_error @ relative
+
+            self.trajectory[i] = (
+                candidate.pose_T +
+                relative
+            )
+        #Adjust the current pose
+        self.cur_t = self.keyframes[-1].pose_T.copy()
+
+        self.cur_R = self.keyframes[-1].pose_R.copy()
+                
+        
     def process_frame(self, frame, frame_count, scale=1.0):
         """
         Processes one frame, updates the accumulated pose, and returns
@@ -311,6 +354,7 @@ class MonocularVO:
                 candidates = self._process_keyframes()
                 if candidates:
                     result = self._process_candidates(candidates)
+
         else:
             print("Keyframe created: ", self.next_keyframe_id)
             self._create_keyframe(frame_count,frame,kp,feats)
@@ -321,7 +365,7 @@ class MonocularVO:
         self.prev_gray, self.prev_kp, self.prev_feats = gray, kp, feats
         return kp, matches
 # --------------------------------------------------------------------------- #
-# Additional Math Helper Functions
+# Additional Math Helper Functions, for basic evaluation
 # --------------------------------------------------------------------------- #
 def cosine_similarity(a, b): #Returns a float from -1 -> 1, with 1 meaning identical, and -1 meaning opposite
 
