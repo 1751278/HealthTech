@@ -283,12 +283,13 @@ class MonocularVO:
         bank = torch.stack([kf.global_descriptor for kf in eligible])   # (M, k*d), already L2-normed
         scores = bank @ current.global_descriptor                       # (M,) cosine sim in one matmul
         scores_np = scores.cpu()
-
+        
         keep = scores_np >= similarity_thresh
         idxs = keep.nonzero(as_tuple=True)[0]
         if len(idxs) == 0:
+            
             return []
-
+        print("What")
         ranked = sorted(((scores_np[i].item(), eligible[i]) for i in idxs), key=lambda x: x[0], reverse=True)
         return ranked[:n_candidates]
 
@@ -589,7 +590,7 @@ class MonocularVO:
             if translation > 0.6 or rotation > 15:
                 print("Keyframe created: ", self.next_keyframe_id, " translation: ", translation, " rotation: ", int(rotation))
                 self._create_keyframe(frame_count, kp_full, feats_full)
-                candidates = self._process_keyframes(3,0.95)
+                candidates = self._process_keyframes(50,0.1)
                 if candidates:
                     result = self._process_candidates(candidates)
                     if result:
