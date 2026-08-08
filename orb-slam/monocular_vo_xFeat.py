@@ -352,11 +352,12 @@ class MonocularVO:
         # Calculate the translational error
         t_error = candidate.pose_T - R_error @ old_t
 
-        # Find the candidate's position in the trajectory
+        # Start from candidate, end at current frame, as those are the most relevant frames to correct. The rest of the trajectory is left unchanged.
 
         start = max(0, candidate.frame_number)
         end = min(current_frame_number, len(self.trajectory) - 1)
 
+        # Check if the range is valid
         if start >= end:
             print("Loop correction skipped: invalid trajectory range.")
             return
@@ -364,14 +365,13 @@ class MonocularVO:
         #  Apply the correction gradually
         total_frames = end - start
 
+
         for i in range(start, end + 1):
 
-            alpha = (i - start) / total_frames
+            alpha = (i - start) / total_frames # How far along the trajectory we are, from 0.0 (candidate) to 1.0 (current frame)
 
 
             # Translation correction
-
-
             original_position = self.trajectory[i]
 
             corrected_position = (
@@ -658,7 +658,7 @@ def save_matplotlib_plot(trajectory, out_path="trajectory.png"):
 # --------------------------------------------------------------------------- #
 def main():
     parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
-    parser.add_argument("--source", default="vo_videos/vid2.mp4",
+    parser.add_argument("--source", default="vo_videos/vid1.mp4",
                          help="Webcam index (e.g. 0), path to a video file, or path to a folder of image frames")
     parser.add_argument("--fx", type=float, default=483.30/1.5, help="Focal length x (pixels)")
     parser.add_argument("--fy", type=float, default=483.69/1.5, help="Focal length y (pixels)")
