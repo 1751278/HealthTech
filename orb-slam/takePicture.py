@@ -7,7 +7,7 @@
 import cv2
 import uuid
 
-cam = cv2.VideoCapture(1)
+cam = cv2.VideoCapture(0)
 
 while True:
     ret, frame = cam.read()
@@ -20,7 +20,7 @@ while True:
     key = cv2.waitKey(1)
     if key % 256 == 32:  # SPACE pressed
         id = uuid.uuid4()
-        success = cv2.imwrite(f"cameraCalibrationData/ethanPhoneImg/{id}.jpg", frame)
+        success = cv2.imwrite(f"cameraCalibrationData/sahirPhoneImg/{id}.jpg", frame)
         if success:
             print(f"Image {id} saved!")
         else:

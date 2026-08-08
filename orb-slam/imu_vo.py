@@ -77,7 +77,7 @@ is_connected_imu = False
 is_connected_lock = threading.Lock()
 
 def IMU_READER(main_thread):
-    COM_PORT = 'COM17' 
+    COM_PORT = 'COM3' # COM17 for KENSHI, COM3 for SAHIR
     BAUD_RATE = 115200
 
     print(f"Connecting to ESP32 on {COM_PORT}...")
@@ -357,7 +357,7 @@ def save_matplotlib_plot(trajectory, out_path="trajectory.png"):
 # Main
 # --------------------------------------------------------------------------- #
 TRAJECTORY = None
-CALIBRATION_PATH = "cameraCalibrationData/calibrationMetrics/ethan.txt"
+CALIBRATION_PATH = "cameraCalibrationData/calibrationMetrics/sahir.txt"
 CALIBRATION_VALS = []
 with open(CALIBRATION_PATH, "r") as file:
     for line in file:
@@ -368,7 +368,7 @@ with open(CALIBRATION_PATH, "r") as file:
 print(CALIBRATION_VALS)
 
 parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
-parser.add_argument("--source", default="1",
+parser.add_argument("--source", default="0",
                         help="Webcam index (e.g. 0), path to a video file, or path to a folder of image frames")
 parser.add_argument("--fx", type=float, default=CALIBRATION_VALS[0]/2.0, help="Focal length x (pixels)")
 parser.add_argument("--fy", type=float, default=CALIBRATION_VALS[1]/2.0, help="Focal length y (pixels)")
