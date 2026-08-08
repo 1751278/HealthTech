@@ -207,49 +207,121 @@ class MonocularVO:
         
         candidates.sort(key=lambda x: x[0],reverse=True) #Sort by score, highest go in lowest index
         return candidates[:n_candidates]
-    def _update_trajectory(self, candidate):
-        #How off is it
-        R_error = candidate.pose_R @ self.cur_R
-        for kf in self.keyframes:
+    def _update_trajectory(self, candidate, current_frame_number): #Gradually ramps up the amount of correction in order to correct the trajectory
 
-            if kf.id > candidate.id:
 
-                relative = (
-                    kf.pose_T -
-                    candidate.pose_T
-                )
+        # Save the current pose
 
-                relative = R_error @ relative
 
-                kf.pose_T = (
-                    candidate.pose_T +
-                    relative
-                )
+        old_R = self.cur_R.copy()
+        old_t = self.cur_t.copy()
 
-                kf.pose_R = (
-                    R_error @
-                    kf.pose_R
-                )
-        for i in range(candidate.frame_number,len(self.trajectory)):
+        # Calculate the rotational error
+        R_error = candidate.pose_R @ old_R.T
+        # Calculate the translational error
+        t_error = candidate.pose_T - R_error @ old_t
 
-            relative = (
-                self.trajectory[i]
-                -
-                candidate.pose_T
+        # Find the candidate's position in the trajectory
+
+        start = max(0, candidate.frame_number)
+        end = min(current_frame_number, len(self.trajectory) - 1)
+
+        if start >= end:
+            print("Loop correction skipped: invalid trajectory range.")
+            return
+
+        #  Apply the correction gradually
+        total_frames = end - start
+
+        for i in range(start, end + 1):
+
+            alpha = (i - start) / total_frames
+
+
+            # Translation correction
+
+
+            original_position = self.trajectory[i]
+
+            corrected_position = (
+                R_error @ original_position
+                + t_error
             )
 
-            relative = R_error @ relative
+            # Blend between original and corrected position.
 
             self.trajectory[i] = (
-                candidate.pose_T +
-                relative
+                (1.0 - alpha) * original_position
+                + alpha * corrected_position
             )
-        #Adjust the current pose
-        self.cur_t = self.keyframes[-1].pose_T.copy()
 
-        self.cur_R = self.keyframes[-1].pose_R.copy()
-                
-        
+        # Correct keyframes using the same gradual correction
+
+        for kf in self.keyframes:
+
+            if kf.id < candidate.id:
+                continue
+
+            
+            if kf.frame_number > current_frame_number:
+                continue
+
+            # Candidate itself should remain fixed.
+            if kf.id == candidate.id:
+                continue
+
+            # Determine where this keyframe lies between the candidate and current frame.
+            alpha = (
+                kf.frame_number - candidate.frame_number
+            ) / (
+                current_frame_number - candidate.frame_number
+            )
+
+            alpha = np.clip(alpha, 0.0, 1.0)
+
+            # Calculate correction
+
+
+            corrected_t = (
+                R_error @ kf.pose_T
+                + t_error
+            )
+
+            corrected_R = (
+                R_error @ kf.pose_R
+            )
+            #Translation correction
+
+            kf.pose_T = (
+                (1.0 - alpha) * kf.pose_T
+                + alpha * corrected_t
+            )
+
+            # Rotation
+            R_delta = corrected_R @ kf.pose_R.T
+
+            rvec, _ = cv2.Rodrigues(R_delta)
+
+            interpolated_rvec = rvec * alpha
+
+            R_interpolated, _ = cv2.Rodrigues(interpolated_rvec)
+
+            kf.pose_R = (
+                R_interpolated @ kf.pose_R
+            )
+
+        #Current pose should match candidate's pose
+
+        self.cur_t = self.trajectory[end].copy()
+        self.cur_R = R_error @ old_R
+
+        #Debug Information:
+
+        print("\n========== LOOP CLOSURE ==========")
+        print("Candidate KF:", candidate.id)
+        print("Candidate frame:", candidate.frame_number)
+        print("Current frame:", current_frame_number)
+        print("==================================\n")
     def _process_candidates(self,candidates):
         current_frame = self.prev_keyframe #Grab the current keyframe
         for (score, candidate) in candidates:
@@ -288,6 +360,7 @@ class MonocularVO:
                     f"LOOP FOUND! "
                     f"KF {current_frame.id} -> KF {candidate.id} "
                     f"({num_inliers}/{len(matches)})"
+                    f"(Score: {score:.3f})"
                 )
 
                 return candidate, R, t
@@ -351,9 +424,11 @@ class MonocularVO:
             if translation > 0.6 or rotation > 15: #If large enough change, then make a new keyframe (Translation may be unreliable at the moment, so too is rotation, but to a smaller degree)
                 print("Keyframe created: ", self.next_keyframe_id, " translation: ", translation, " rotation: ", int(rotation))
                 self._create_keyframe(frame_count,frame,kp,feats)
-                candidates = self._process_keyframes()
+                candidates = self._process_keyframes(3,0.95)
                 if candidates:
                     result = self._process_candidates(candidates)
+                    if result:
+                        self._update_trajectory(result[0],frame_count)
         else:
             print("Keyframe created: ", self.next_keyframe_id)
             self._create_keyframe(frame_count,frame,kp,feats)
@@ -421,7 +496,7 @@ def save_matplotlib_plot(trajectory, out_path="trajectory.png"):
 # --------------------------------------------------------------------------- #
 def main():
     parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
-    parser.add_argument("--source", default="vo_videos/vid1.mp4",
+    parser.add_argument("--source", default="vo_videos/vid2.mp4",
                          help="Webcam index (e.g. 0), path to a video file, or path to a folder of image frames")
     parser.add_argument("--fx", type=float, default=483.30/1.5, help="Focal length x (pixels)")
     parser.add_argument("--fy", type=float, default=483.69/1.5, help="Focal length y (pixels)")
