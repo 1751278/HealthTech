@@ -82,14 +82,25 @@ def IMU_READER(main_thread):
 
     print(f"Connecting to ESP32 on {COM_PORT}...")
     global is_connected_imu
+    global imu_data
     try:
         # Open the serial port connection
         ser = serial.Serial(COM_PORT, BAUD_RATE, timeout=1)
         time.sleep(2) # Allow connection to settle
         print("Connected successfully! Listening for data...")
+        # read data from serial port to buffer any data that is corrupt
+        for _ in range(10):
+            if ser.in_waiting > 0:
+                raw_data = ser.readline()
+                decoded_data = raw_data.decode('utf-8', errors='ignore').strip()
+                print(decoded_data)
+                split_data = decoded_data.split("/")
+
+                with imu_lock:
+                    imu_data = [float(split_data[0]), float(split_data[1]), float(split_data[2])]
+
         with is_connected_lock:
             is_connected_imu = True
-        global imu_data
         while True:
             if ser.in_waiting > 0:
                 # Read line, decode bytes to string, and strip extra whitespaces/newlines
@@ -116,6 +127,8 @@ def IMU_READER(main_thread):
 # --------------------------------------------------------------------------- #
 class MonocularVO:
     def __init__(self, K, n_features=3000, min_matches=8, ratio=0.75):
+        # consistently use the same CPU/GPU device.
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         self.K = K
         # ORB-SLAM3's own feature extractor (quad-tree keypoint distribution),
@@ -135,6 +148,7 @@ class MonocularVO:
         # Initialize the matcher with LSH parameters
         self.flann = cv2.FlannBasedMatcher(index_params, search_params)
         self.min_matches = min_matches
+        self.n_features = n_features
         self.ratio = ratio
 
         self.prev_gray = None
@@ -182,7 +196,70 @@ class MonocularVO:
             if m.distance < self.ratio * n.distance:
                 good.append(m)
         return good
+    def _keypoints_to_cv2(self, keypoints):
+        """Convert a Tensor/NumPy array of keypoints (N, 2) to a list of cv2.KeyPoint."""
+        if isinstance(keypoints, torch.Tensor):
+            keypoints = keypoints.cpu().numpy()
+        return [cv2.KeyPoint(x=float(pt[0]), y=float(pt[1]), size=1.0) for pt in keypoints]
 
+    def _detect_xFeat(self, frame, top_k=None):
+        if top_k is None:
+            top_k = self.n_features
+
+        # XFeat inference does not require gradients, so disable autograd
+        # to reduce memory usage and inference overhead.
+        with torch.inference_mode():
+            output = self.xfeat.detectAndCompute(frame, top_k=top_k)[0]
+
+        # Keep keypoints as raw NumPy coordinates internally. Conversion to
+        # cv2.KeyPoint objects is only needed later for visualization.
+        kpts = output['keypoints']
+        if isinstance(kpts, torch.Tensor):
+            kpts = kpts.cpu().numpy()
+        return kpts, output
+
+    def _match_xFeat(self, feats0, feats1):
+        # Return an empty index array if either descriptor set is unavailable.
+        if feats0 is None or feats1 is None:
+            return np.zeros((0, 2), dtype=np.int64)
+
+        # Only transfer descriptors when they are not already on the correct
+        # device, avoiding unnecessary CPU/GPU transfers.
+        if feats0.device != self.device:
+            feats0 = feats0.to(self.device)
+        if feats1.device != self.device:
+            feats1 = feats1.to(self.device)
+
+        # XFeat matching is inference-only, so gradients are unnecessary.
+        with torch.inference_mode():
+            match = self.xfeat.match(feats0, feats1)
+
+        if isinstance(match, (tuple, list)):
+            idx0, idx1 = match
+        else:
+            match = torch.as_tensor(match)
+
+            # Convert XFeat's possible match formats into two arrays of
+            # corresponding descriptor indices.
+            if match.ndim == 2 and match.shape[1] >= 2:
+                idx0, idx1 = match[:, 0], match[:, 1]
+            elif match.ndim == 1 and match.numel() % 2 == 0:
+                idx0, idx1 = match[0::2], match[1::2]
+            else:
+                return np.zeros((0, 2), dtype=np.int64)
+
+        if isinstance(idx0, torch.Tensor):
+            idx0 = idx0.cpu().numpy()
+            idx1 = idx1.cpu().numpy()
+        idx0 = np.asarray(idx0, dtype=np.int64)
+        idx1 = np.asarray(idx1, dtype=np.int64)
+        if idx0.size == 0:
+            return np.zeros((0, 2), dtype=np.int64)
+
+        # Store matches as raw (N, 2) descriptor-index pairs instead of
+        # constructing cv2.DMatch objects.
+        return np.stack([idx0, idx1], axis=1)
+    
     def process_frame(self, frame, scale=1.0):
         """
         Processes one frame, updates the accumulated pose, and returns
@@ -280,7 +357,7 @@ def save_matplotlib_plot(trajectory, out_path="trajectory.png"):
 # Main
 # --------------------------------------------------------------------------- #
 TRAJECTORY = None
-CALIBRATION_PATH = "cameraCalibrationData/calibrationMetrics/kenshi.txt"
+CALIBRATION_PATH = "cameraCalibrationData/calibrationMetrics/ethan.txt"
 CALIBRATION_VALS = []
 with open(CALIBRATION_PATH, "r") as file:
     for line in file:
@@ -291,13 +368,13 @@ with open(CALIBRATION_PATH, "r") as file:
 print(CALIBRATION_VALS)
 
 parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
-parser.add_argument("--source", default="vo_videos/vid2.mp4",
+parser.add_argument("--source", default="1",
                         help="Webcam index (e.g. 0), path to a video file, or path to a folder of image frames")
 parser.add_argument("--fx", type=float, default=CALIBRATION_VALS[0]/2.0, help="Focal length x (pixels)")
 parser.add_argument("--fy", type=float, default=CALIBRATION_VALS[1]/2.0, help="Focal length y (pixels)")
 parser.add_argument("--cx", type=float, default=CALIBRATION_VALS[2]/2.0, help="Principal point x")
 parser.add_argument("--cy", type=float, default=CALIBRATION_VALS[3]/2.0, help="Principal point y")
-parser.add_argument("--scale", type=float, default=1.0,
+parser.add_argument("--scale", type=float, default=0.2,
                         help="Per-frame translation scale factor. Monocular VO has no absolute "
                             "scale; supply this from external info (e.g. constant speed * dt) "
                             "or leave at 1.0 for a scale-free trajectory shape.")
