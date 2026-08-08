@@ -34,7 +34,6 @@ def format_desc(desc):
         parts.append("Objects: " + "; ".join(objects))
     return " | ".join(parts) if parts else "Nothing notable"
 
-
 def main():
     source = 1
     cap = cv2.VideoCapture(source)

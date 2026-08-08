@@ -9,3 +9,4 @@ wheels/
 # Virtual environments
 .venv
 orb-slam/vo_videos/vid2.mp4
+orb-slam/cameraCalibrationData/kenshiPhoneImg/vid2.mp4

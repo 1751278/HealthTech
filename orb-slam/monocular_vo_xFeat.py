@@ -1,7 +1,6 @@
 import argparse
 import glob
 import os
-import sys
 
 import cv2
 import numpy as np
@@ -14,24 +13,28 @@ class KeyFrame:
         self,
         id,
         frame_number,
-        image,
         pose_R,
         pose_T,
         keypoints,
         descriptors,
+        global_descriptor=None,
     ):
         self.id = id
 
         self.frame_number = frame_number
-
-        self.image = image.copy()
-
         self.keypoints = keypoints
-
         self.descriptors = descriptors
-        self.global_descriptor = descriptors.mean(dim=0) #Gets the mean of the descriptors
-        self.pose_R = pose_R.copy() #Rotation
-        self.pose_T = pose_T.copy() #Translation
+
+        # Use VLAD as the global descriptor when one has already been
+        # computed; otherwise fall back to mean-pooling until VLAD is fitted.
+        self.global_descriptor = (
+            global_descriptor
+            if global_descriptor is not None
+            else descriptors.mean(dim=0)
+        )
+
+        self.pose_R = pose_R.copy()  # Rotation
+        self.pose_T = pose_T.copy()  # Translation
 # --------------------------------------------------------------------------- #
 # Frame source abstraction: webcam index, video file, or folder of images
 # --------------------------------------------------------------------------- #
@@ -75,34 +78,67 @@ class FrameReader:
         if self.cap is not None:
             self.cap.release()
 
+# --------------------------------------------------------------------------- #
+# VLAD (Vector of Locally Aggregated Descriptors) implementation
+# --------------------------------------------------------------------------- #
 
+class VLAD:
+    def __init__(self, descriptor_dim=64, n_clusters=32, device='cuda'):
+        self.k = n_clusters
+        self.d = descriptor_dim
+        self.device = device
+        self.centroids = None  # (k, d), set by fit()
+
+    def fit(self, sample_descriptors: torch.Tensor, iters=25):
+        # sample_descriptors: (N, d) pooled from many frames' local descriptors
+        x = sample_descriptors.to(self.device)
+        idx = torch.randperm(x.shape[0])[:self.k]
+        centroids = x[idx].clone()
+        for _ in range(iters):
+            d = torch.cdist(x, centroids)          # (N, k)
+            assign = d.argmin(dim=1)
+            for c in range(self.k):
+                mask = assign == c
+                if mask.any():
+                    centroids[c] = x[mask].mean(dim=0)
+        self.centroids = centroids
+
+    def encode(self, descriptors: torch.Tensor) -> torch.Tensor:
+        # descriptors: (N, d) for ONE frame -> returns a single (k*d,) global vector
+        x = descriptors.to(self.device)
+        d = torch.cdist(x, self.centroids)          # (N, k)
+        assign = d.argmin(dim=1)
+        vlad = torch.zeros(self.k, self.d, device=self.device)
+        for c in range(self.k):
+            mask = assign == c
+            if mask.any():
+                vlad[c] = (x[mask] - self.centroids[c]).sum(dim=0)
+        vlad = torch.sign(vlad) * torch.sqrt(vlad.abs() + 1e-12)  # power-norm
+        vlad = vlad.flatten()
+        return vlad / (vlad.norm() + 1e-12)                       # L2-norm
+    
 # --------------------------------------------------------------------------- #
 # Core monocular VO
 # --------------------------------------------------------------------------- #
 class MonocularVO:
     def __init__(self, K, n_features=3000, min_matches=8, ratio=0.75):
 
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # Store the device so feature extraction, matching, and VLAD can
+        # consistently use the same CPU/GPU device.
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         # 1. Initialize XFeat
-        self.xfeat = XFeat().to(device).eval()
+        self.xfeat = XFeat().to(self.device).eval()
 
         self.K = K
-        # ORB-SLAM3's own feature extractor (quad-tree keypoint distribution),
-        # API-compatible with cv2.ORB_create()'s detectAndCompute().
-        self.bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
-        # Define LSH index parameters for binary descriptors
-        FLANN_INDEX_LSH = 6
-        FLANN_INDEX_KDTREE = 1
-        index_params = dict(
-            algorithm=FLANN_INDEX_LSH,
-            table_number=6,       # Standard recommendation
-            key_size=12,          # Standard recommendation
-            multi_probe_level=1,   # Standard recommendation
-        )
-        search_params = dict(checks=100)
-        # Initialize the matcher with LSH parameters
-        self.flann = cv2.FlannBasedMatcher(index_params, search_params)
+
+        # Store the requested feature count so regular-frame detection
+        # uses the same value instead of a hardcoded feature limit.
+        self.n_features = n_features
+
+        # VLAD provides a fixed-length global descriptor for keyframe
+        # retrieval during loop-closure detection.
+        self.vlad = VLAD(descriptor_dim=64, n_clusters=32, device=self.device)
         self.min_matches = min_matches
         self.ratio = ratio
 
@@ -117,9 +153,9 @@ class MonocularVO:
         self.cur_R = np.eye(3)
         self.cur_t = np.zeros((3, 1))
 
-        # trajectory[i] is the 3x1 camera position at step i (arbitrary scale
-        # unless an external scale is supplied every frame)
-        self.trajectory = [self.cur_t.copy()]
+        # trajectory[i] is the 3x1 camera position at frame i.
+        # Every frame appends the current pose, even if no new inliers were found.
+        self.trajectory = []
         self.num_inlier_matches = 0
 
     @staticmethod
@@ -133,80 +169,175 @@ class MonocularVO:
         if isinstance(keypoints, torch.Tensor):
             keypoints = keypoints.cpu().numpy()
         return [cv2.KeyPoint(x=float(pt[0]), y=float(pt[1]), size=1.0) for pt in keypoints]
-    
-    def _matches_to_cv2(self, matches_indices):
-        """Convert matching indices to a list of cv2.DMatch."""
-        
-        # 1. If matches_indices is a tuple/list of 2 arrays (idx0, idx1), stack them into (N, 2)
-        if isinstance(matches_indices, (tuple, list)) and len(matches_indices) == 2:
-            idx0, idx1 = matches_indices
-            if isinstance(idx0, torch.Tensor):
-                matches_indices = torch.stack([idx0, idx1], dim=-1)
-            else:
-                matches_indices = np.stack([idx0, idx1], axis=-1)
 
-        # 2. Convert PyTorch Tensor to NumPy
-        if isinstance(matches_indices, torch.Tensor):
-            matches_indices = matches_indices.cpu().numpy()
+    def _detect_xFeat(self, frame, top_k=None):
+        if top_k is None:
+            top_k = self.n_features
 
-        # 3. Handle shape (2, N) -> transpose to (N, 2)
-        if matches_indices.ndim == 2 and matches_indices.shape[0] == 2 and matches_indices.shape[1] != 2:
-            matches_indices = matches_indices.T
+        # XFeat inference does not require gradients, so disable autograd
+        # to reduce memory usage and inference overhead.
+        with torch.inference_mode():
+            output = self.xfeat.detectAndCompute(frame, top_k=top_k)[0]
 
-        # 4. If shape is (N, 3) or higher (contains scores), keep only the first two columns (idx0, idx1)
-        if matches_indices.ndim == 2 and matches_indices.shape[1] > 2:
-            matches_indices = matches_indices[:, :2]
-
-        # 5. Build OpenCV DMatch objects
-        cv2_matches = []
-        for idx0, idx1 in matches_indices:
-            match = cv2.DMatch(_queryIdx=int(idx0), _trainIdx=int(idx1), _distance=0.0)
-            cv2_matches.append(match)
-            
-        return cv2_matches
-    
-    def _detect_xFeat(self, frame):
-        output = self.xfeat.detectAndCompute(frame, top_k=4096)[0]
-        kpts = self._keypoints_to_cv2(output['keypoints'])
+        # Keep keypoints as raw NumPy coordinates internally. Conversion to
+        # cv2.KeyPoint objects is only needed later for visualization.
+        kpts = output['keypoints']
+        if isinstance(kpts, torch.Tensor):
+            kpts = kpts.cpu().numpy()
         return kpts, output
-    
+
     def _match_xFeat(self, feats0, feats1):
-        match = self.xfeat.match(feats0, feats1)
-        return self._matches_to_cv2(match)
-    
-    def _match(self, des1, des2):
-        if des1 is None or des2 is None or len(des1) < 2 or len(des2) < 2:
-            return []
-        knn = self.flann.knnMatch(des1, des2, k=2)
-        good = []
-        for pair in knn:
-            if len(pair) != 2:
-                continue
-            m, n = pair
-            if m.distance < self.ratio * n.distance:
-                good.append(m)
-        return good
-    def _create_keyframe(self, frame_count, frame,kp,feats):
-        kf = KeyFrame(self.next_keyframe_id,frame_count,frame,self.cur_R,self.cur_t,kp,feats)
+        # Return an empty index array if either descriptor set is unavailable.
+        if feats0 is None or feats1 is None:
+            return np.zeros((0, 2), dtype=np.int64)
+
+        # Only transfer descriptors when they are not already on the correct
+        # device, avoiding unnecessary CPU/GPU transfers.
+        if feats0.device != self.device:
+            feats0 = feats0.to(self.device)
+        if feats1.device != self.device:
+            feats1 = feats1.to(self.device)
+
+        # XFeat matching is inference-only, so gradients are unnecessary.
+        with torch.inference_mode():
+            match = self.xfeat.match(feats0, feats1)
+
+        if isinstance(match, (tuple, list)):
+            idx0, idx1 = match
+        else:
+            match = torch.as_tensor(match)
+
+            # Convert XFeat's possible match formats into two arrays of
+            # corresponding descriptor indices.
+            if match.ndim == 2 and match.shape[1] >= 2:
+                idx0, idx1 = match[:, 0], match[:, 1]
+            elif match.ndim == 1 and match.numel() % 2 == 0:
+                idx0, idx1 = match[0::2], match[1::2]
+            else:
+                return np.zeros((0, 2), dtype=np.int64)
+
+        if isinstance(idx0, torch.Tensor):
+            idx0 = idx0.cpu().numpy()
+            idx1 = idx1.cpu().numpy()
+        idx0 = np.asarray(idx0, dtype=np.int64)
+        idx1 = np.asarray(idx1, dtype=np.int64)
+        if idx0.size == 0:
+            return np.zeros((0, 2), dtype=np.int64)
+
+        # Store matches as raw (N, 2) descriptor-index pairs instead of
+        # constructing cv2.DMatch objects.
+        return np.stack([idx0, idx1], axis=1)
+    def _create_keyframe(self, frame_count, kp, feats):
+        # Keyframes keep descriptors on the CPU so large descriptor banks do
+        # not remain permanently allocated in GPU memory.
+        if isinstance(feats, torch.Tensor):
+            feats_cpu = feats.detach().cpu()
+        else:
+            feats_cpu = torch.tensor(feats)
+
+        # Once VLAD has been fitted, use it to create the keyframe's global
+        # descriptor. Before that point, use mean-pooling as a temporary
+        # fallback descriptor.
+        if self.vlad.centroids is not None:
+            global_descriptor = self.vlad.encode(feats_cpu.to(self.device))
+        else:
+            global_descriptor = feats_cpu.mean(dim=0)
+
+        kf = KeyFrame(
+            self.next_keyframe_id,
+            frame_count,
+            self.cur_R,
+            self.cur_t,
+            kp,
+            feats_cpu,
+            global_descriptor=global_descriptor,
+        )
         self.keyframes.append(kf)
         self.prev_keyframe = kf
         self.next_keyframe_id += 1
-    def _process_keyframes(self,n_candidates = 5, similarity_thresh = 0.85): #Compares and returns the best "candidates" for loop closure with a basic comparison algorithm as to not completely overload a system
-        current_frame = self.prev_keyframe
-        candidates = []
+        self._maybe_fit_vlad()
 
+    def _maybe_fit_vlad(self):
+        # Wait until enough keyframes exist to build a representative VLAD
+        # codebook, then fit it once and re-encode all existing keyframes.
+        if self.vlad.centroids is not None or len(self.keyframes) < 20:
+            return
+
+        pool = torch.cat([kf.descriptors.to(self.device) for kf in self.keyframes], dim=0)
+        self.vlad.fit(pool)
+
+        # Existing keyframes were initially encoded using mean-pooling.
+        # Re-encode them now that the shared VLAD codebook exists.
         for kf in self.keyframes:
-            if current_frame.id - kf.id < 50: #Prevents frames from too early on to be considered, also blocks the current frame from being compared to itself.
-                continue
-            score = cosine_similarity(
-                current_frame.global_descriptor,
-                kf.global_descriptor
-            )
-            if score >= similarity_thresh:
-                candidates.append((score, kf))
-        
-        candidates.sort(key=lambda x: x[0],reverse=True) #Sort by score, highest go in lowest index
-        return candidates[:n_candidates]
+            kf.global_descriptor = self.vlad.encode(kf.descriptors.to(self.device))
+
+    def _process_keyframes(self, n_candidates=5, similarity_thresh=0.85):
+        current = self.prev_keyframe
+        eligible = [kf for kf in self.keyframes if current.id - kf.id >= 50]
+        if not eligible:
+            return []
+
+        # Stack all global descriptors into one matrix so cosine similarities
+        # against the current keyframe can be computed in a single batched
+        # matrix multiplication instead of one Python loop per keyframe.
+        bank = torch.stack([kf.global_descriptor for kf in eligible])   # (M, k*d), already L2-normed
+        scores = bank @ current.global_descriptor                       # (M,) cosine sim in one matmul
+        scores_np = scores.cpu()
+
+        keep = scores_np >= similarity_thresh
+        idxs = keep.nonzero(as_tuple=True)[0]
+        if len(idxs) == 0:
+            return []
+
+        ranked = sorted(((scores_np[i].item(), eligible[i]) for i in idxs), key=lambda x: x[0], reverse=True)
+        return ranked[:n_candidates]
+
+    def _prefilter_candidates(self, candidates, current_frame, sim_thresh=0.9, min_count=100):
+        """
+        Cheap one-shot ranking of candidates using a single batched matmul.
+        Returns candidates re-sorted by rough inlier count, keeping only those
+        that clear min_count. This does not replace the full geometric check.
+        """
+        # Normalize local descriptors so their dot product represents cosine
+        # similarity during the cheap candidate prefilter.
+        cur_desc = current_frame.descriptors.to(self.device)
+        cur_desc = torch.nn.functional.normalize(cur_desc, dim=1)
+
+        cat_desc = []
+        boundaries = []  # (candidate, score, start, end)
+        offset = 0
+        for score, cand in candidates:
+            d = torch.nn.functional.normalize(cand.descriptors.to(self.device), dim=1)
+            boundaries.append((cand, score, offset, offset + d.shape[0]))
+            cat_desc.append(d)
+            offset += d.shape[0]
+
+        if not cat_desc:
+            return []
+
+        # Combine every candidate's descriptors into one matrix so all
+        # candidate-to-current-frame similarities can be evaluated together.
+        cat_desc = torch.cat(cat_desc, dim=0)
+
+        with torch.inference_mode():
+            sim = cat_desc @ cur_desc.T
+
+            # For every candidate descriptor, keep only its strongest
+            # similarity against any descriptor in the current frame.
+            best_sim, _ = sim.max(dim=1)
+
+        ranked = []
+        for cand, score, start, end in boundaries:
+            # This is only a rough match count used to reject weak candidates
+            # before running the expensive XFeat + RANSAC verification.
+            rough_count = int((best_sim[start:end] > sim_thresh).sum().item())
+            if rough_count >= min_count:
+                ranked.append((rough_count, score, cand))
+
+        # Process candidates with the strongest rough descriptor support first.
+        ranked.sort(key=lambda x: x[0], reverse=True)
+        return [(score, cand) for _, score, cand in ranked]
+
     def _update_trajectory(self, candidate, current_frame_number): #Gradually ramps up the amount of correction in order to correct the trajectory
 
 
@@ -323,17 +454,27 @@ class MonocularVO:
         print("Current frame:", current_frame_number)
         print("==================================\n")
     def _process_candidates(self,candidates):
-        current_frame = self.prev_keyframe #Grab the current keyframe
+        current_frame = self.prev_keyframe  # Grab the current keyframe
+
+        # Cheap descriptor-level filtering happens before expensive XFeat
+        # matching and geometric verification, reducing the number of
+        # candidates that reach the RANSAC stage.
+        candidates = self._prefilter_candidates(candidates, current_frame)
+        if not candidates:
+            return None
+
         for (score, candidate) in candidates:
             matches = self._match_xFeat(
                 candidate.descriptors,
                 current_frame.descriptors
             )
-            if len(matches) < 100:
+            if matches.shape[0] < 100:
                 continue
-            pts_old = np.float32([candidate.keypoints[m.queryIdx].pt for m in matches])
 
-            pts_new = np.float32([current_frame.keypoints[m.trainIdx].pt for m in matches])
+            # Matches are raw descriptor-index pairs, so NumPy fancy indexing
+            # directly retrieves the corresponding keypoint coordinates.
+            pts_old = np.float32(candidate.keypoints[matches[:, 0]])
+            pts_new = np.float32(current_frame.keypoints[matches[:, 1]])
             E, mask = cv2.findEssentialMat(
                 pts_new,
                 pts_old,
@@ -372,30 +513,51 @@ class MonocularVO:
         Processes one frame, updates the accumulated pose, and returns
         (kp, matches) for visualization purposes.
         """
-        #with super points
         gray = self.to_gray(frame)
-        kp, output = self._detect_xFeat(gray)
-        feats = output['descriptors']
+
+        # Run one dense XFeat detection pass and reuse its results for both
+        # normal frame-to-frame tracking and keyframe creation. This avoids
+        # running XFeat twice when a new keyframe is created.
+        kp_full, output = self._detect_xFeat(gray, top_k=4096)
+        feats_full = output['descriptors']
+
+        # Use only the configured number of features for regular tracking,
+        # while retaining the full dense detection for keyframe storage.
+        kp_np = kp_full[: self.n_features]
+        feats = feats_full[: self.n_features]
+
         if self.prev_gray is None:
-            self.prev_gray, self.prev_kp, self.prev_feats = gray, kp, feats
-            return kp, []
+            self.prev_gray, self.prev_kp, self.prev_feats = gray, kp_np, feats
+
+            # Record a trajectory point for the first frame so trajectory
+            # length remains one-to-one with the number of processed frames.
+            self.trajectory.append(self.cur_t.copy())
+            return kp_np, np.zeros((0, 2), dtype=np.int64)
 
         matches = self._match_xFeat(self.prev_feats, feats)
 
-        if len(matches) < self.min_matches:
-            self.prev_gray, self.prev_kp, self.prev_feats = gray, kp, feats
-            return kp, matches
+        if matches.shape[0] < self.min_matches:
+            self.prev_gray, self.prev_kp, self.prev_feats = gray, kp_np, feats
 
-        pts_prev = np.float32([self.prev_kp[m.queryIdx].pt for m in matches])
-        pts_cur = np.float32([kp[m.trainIdx].pt for m in matches])
+            # Even when tracking fails, record the unchanged pose so every
+            # processed frame has exactly one corresponding trajectory point.
+            self.trajectory.append(self.cur_t.copy())
+            return kp_np, matches
+
+        pts_prev = np.float32(self.prev_kp[matches[:, 0]])
+        pts_cur = np.float32(kp_np[matches[:, 1]])
 
         E, mask = cv2.findEssentialMat(
             pts_cur, pts_prev, self.K, method=cv2.RANSAC, prob=0.999, threshold=1.0
         )
 
         if E is None or E.shape != (3, 3):
-            self.prev_gray, self.prev_kp, self.prev_feats = gray, kp, feats
-            return kp, matches
+            self.prev_gray, self.prev_kp, self.prev_feats = gray, kp_np, feats
+
+            # Keep trajectory indexing synchronized even when no valid pose
+            # can be recovered from the current frame.
+            self.trajectory.append(self.cur_t.copy())
+            return kp_np, matches
 
         _, R, t, pose_mask = cv2.recoverPose(E, pts_cur, pts_prev, self.K, mask=mask)
         self.num_inlier_matches = int(pose_mask.sum()) if pose_mask is not None else 0
@@ -404,9 +566,13 @@ class MonocularVO:
         if self.num_inlier_matches >= self.min_matches:
             self.cur_t = self.cur_t + scale * (self.cur_R @ t)
             self.cur_R = R @ self.cur_R
-            self.trajectory.append(self.cur_t.copy())
 
-        #Create new keyframes and store them
+        # Record the pose on every frame, including frames where the pose
+        # update was rejected. This keeps trajectory length 1:1 with frames.
+        self.trajectory.append(self.cur_t.copy())
+
+        # Create new keyframes and store them when the camera has moved or
+        # rotated far enough from the previous keyframe.
         if len(self.keyframes) > 0:
             translation = np.linalg.norm(
                 self.cur_t - self.prev_keyframe.pose_T
@@ -418,35 +584,31 @@ class MonocularVO:
             # Prevents errors
             value = np.clip((trace - 1.0) / 2.0, -1.0, 1.0)
 
-            rotation = np.degrees(np.arccos(value)) #Rotation in degrees
+            rotation = np.degrees(np.arccos(value))  # Rotation in degrees
 
- 
-            if translation > 0.6 or rotation > 15: #If large enough change, then make a new keyframe (Translation may be unreliable at the moment, so too is rotation, but to a smaller degree)
+            if translation > 0.6 or rotation > 15:
                 print("Keyframe created: ", self.next_keyframe_id, " translation: ", translation, " rotation: ", int(rotation))
-                self._create_keyframe(frame_count,frame,kp,feats)
+                self._create_keyframe(frame_count, kp_full, feats_full)
                 candidates = self._process_keyframes(3,0.95)
                 if candidates:
                     result = self._process_candidates(candidates)
                     if result:
-                        self._update_trajectory(result[0],frame_count)
+                        self._update_trajectory(result[0], frame_count)
         else:
             print("Keyframe created: ", self.next_keyframe_id)
-            self._create_keyframe(frame_count,frame,kp,feats)
+
+            # The first keyframe also uses the full dense 4096-feature
+            # detection so it is not less descriptive than later keyframes.
+            self._create_keyframe(frame_count, kp_full, feats_full)
 
 
         
 
-        self.prev_gray, self.prev_kp, self.prev_feats = gray, kp, feats
-        return kp, matches
+        self.prev_gray, self.prev_kp, self.prev_feats = gray, kp_np, feats
+        return kp_np, matches
 # --------------------------------------------------------------------------- #
 # Additional Math Helper Functions
 # --------------------------------------------------------------------------- #
-def cosine_similarity(a, b): #Returns a float from -1 -> 1, with 1 meaning identical, and -1 meaning opposite
-
-    a = a / np.linalg.norm(a)
-    b = b / np.linalg.norm(b)
-
-    return np.dot(a, b)
 # --------------------------------------------------------------------------- #
 # Visualization helpers
 # --------------------------------------------------------------------------- #
@@ -529,10 +691,14 @@ def main():
                 break
             frame = cv2.resize(frame, (int(720*1/1.5), int(1280*1/1.5)))  # Resize for faster processing
 
-            kp, matches = vo.process_frame(frame, frame_count, scale=args.scale,)
+            kp_np, matches = vo.process_frame(frame, frame_count, scale=args.scale)
             frame_count += 1
 
             if not args.no_display:
+                # Detection now returns raw NumPy keypoint coordinates rather
+                # than cv2.KeyPoint objects. Convert them only when OpenCV
+                # visualization actually requires that format.
+                kp = vo._keypoints_to_cv2(kp_np)
                 vis = cv2.drawKeypoints(frame, kp, None, color=(0, 255, 0), flags=0)
                 cv2.putText(vis, f"frame {frame_count} | keypoints {len(kp)}",
                             (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2)
