@@ -16,6 +16,9 @@ import cv2
 import numpy as np
 from .VLAD import VLAD
 from .key_frame import KeyFrame
+
+#DEBUG
+import time
 # --------------------------------------------------------------------------- #
 # VLAD (Vector of Locally Aggregated Descriptors) implementation
 # --------------------------------------------------------------------------- #
@@ -61,6 +64,7 @@ class LoopClosure:
             self.next_keyframe_id += 1
             self._maybe_fit_vlad()
     def _process_keyframes(self, n_candidates=3, similarity_thresh=0.85):
+            debug_start_time = time.perf_counter()
             current = self.prev_keyframe
             eligible = [kf for kf in self.keyframes if current.id - kf.id >= 50]
             if not eligible:
@@ -79,9 +83,17 @@ class LoopClosure:
                 
                 return []
             ranked = sorted(((scores_np[i].item(), eligible[i]) for i in idxs), key=lambda x: x[0], reverse=True)
+
+            debug_end_time = time.perf_counter()
+            debug_duration = debug_end_time - debug_start_time
+            print(debug_duration, " seconds for processing keyframes")
+
             return ranked[:n_candidates]
     
     def _prefilter_candidates(self, candidates, current_frame, sim_thresh=0.9, min_count=100):
+
+        debug_start_time = time.perf_counter()
+
         """
         Cheap one-shot ranking of candidates using a single batched matmul.
         Returns candidates re-sorted by rough inlier count, keeping only those
@@ -125,6 +137,11 @@ class LoopClosure:
 
         # Process candidates with the strongest rough descriptor support first.
         ranked.sort(key=lambda x: x[0], reverse=True)
+
+        debug_end_time = time.perf_counter()
+        debug_duration = debug_end_time - debug_start_time
+        print(debug_duration, " seconds for prefiltering candidates")
+
         return [(score, cand) for _, score, cand in ranked]
     def _process_candidates(self,candidates):
             
@@ -134,6 +151,7 @@ class LoopClosure:
             # matching and geometric verification, reducing the number of
             # candidates that reach the RANSAC stage.
             candidates = self._prefilter_candidates(candidates, current_frame)
+            debug_start_time = time.perf_counter()
             if not candidates:
                 return None
             
@@ -178,9 +196,13 @@ class LoopClosure:
                         f"({num_inliers}/{len(matches)})"
                         f"(Score: {score:.3f})"
                     )
-
+                    debug_end_time = time.perf_counter()
+                    debug_duration = debug_end_time - debug_start_time
+                    print(debug_duration, " seconds for processing candidates")
                     return candidate, R, t
-
+            debug_end_time = time.perf_counter()
+            debug_duration = debug_end_time - debug_start_time
+            print(debug_duration, " seconds for processing candidates")
             return None
     def _update_trajectory(self, candidate, current_frame_number): #Gradually ramps up the amount of correction in order to correct the trajectory
     
