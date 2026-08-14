@@ -2,6 +2,15 @@
 # This class represents a loop closure mechanism that uses a matching function to identify potential loop closures.
 # Initialize this before the main loop
     # Match_function represents a function such as xFeat that handles matching between features in the current frame and previously stored frames to detect loop closures.
+    # In the initialization of the VO class, you can create an instance of the LoopClosure class and pass the matching function to it.
+    # Example: self.lc = lc(self._match_xFeat,self.K,self.device)
+    # Then at the end of the process_frame function, you can call the process_loop_check method of the LoopClosure instance to check for loop closures.
+    # Example: 
+    # traj = self.lc.process_loop_check(self.cur_R, self.cur_t, frame_count, kp_full, feats_full,self.trajectory)
+    # if traj:
+        #self.trajectory = traj
+
+
 import torch
 import cv2
 import numpy as np
