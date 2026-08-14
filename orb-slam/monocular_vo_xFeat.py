@@ -7,34 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 from accelerated_features.modules.xfeat import XFeat
-#A KeyFrame, storing all the data from a single frame.
-class KeyFrame:
-    def __init__(
-        self,
-        id,
-        frame_number,
-        pose_R,
-        pose_T,
-        keypoints,
-        descriptors,
-        global_descriptor=None,
-    ):
-        self.id = id
-
-        self.frame_number = frame_number
-        self.keypoints = keypoints
-        self.descriptors = descriptors
-
-        # Use VLAD as the global descriptor when one has already been
-        # computed; otherwise fall back to mean-pooling until VLAD is fitted.
-        self.global_descriptor = (
-            global_descriptor
-            if global_descriptor is not None
-            else descriptors.mean(dim=0)
-        )
-
-        self.pose_R = pose_R.copy()  # Rotation
-        self.pose_T = pose_T.copy()  # Translation
+from loopClosure.loop_closure import LoopClosure as lc
 # --------------------------------------------------------------------------- #
 # Frame source abstraction: webcam index, video file, or folder of images
 # --------------------------------------------------------------------------- #
@@ -78,67 +51,38 @@ class FrameReader:
         if self.cap is not None:
             self.cap.release()
 
-# --------------------------------------------------------------------------- #
-# VLAD (Vector of Locally Aggregated Descriptors) implementation
-# --------------------------------------------------------------------------- #
 
-class VLAD:
-    def __init__(self, descriptor_dim=64, n_clusters=32, device='cuda'):
-        self.k = n_clusters
-        self.d = descriptor_dim
-        self.device = device
-        self.centroids = None  # (k, d), set by fit()
 
-    def fit(self, sample_descriptors: torch.Tensor, iters=25):
-        # sample_descriptors: (N, d) pooled from many frames' local descriptors
-        x = sample_descriptors.to(self.device)
-        idx = torch.randperm(x.shape[0])[:self.k]
-        centroids = x[idx].clone()
-        for _ in range(iters):
-            d = torch.cdist(x, centroids)          # (N, k)
-            assign = d.argmin(dim=1)
-            for c in range(self.k):
-                mask = assign == c
-                if mask.any():
-                    centroids[c] = x[mask].mean(dim=0)
-        self.centroids = centroids
 
-    def encode(self, descriptors: torch.Tensor) -> torch.Tensor:
-        # descriptors: (N, d) for ONE frame -> returns a single (k*d,) global vector
-        x = descriptors.to(self.device)
-        d = torch.cdist(x, self.centroids)          # (N, k)
-        assign = d.argmin(dim=1)
-        vlad = torch.zeros(self.k, self.d, device=self.device)
-        for c in range(self.k):
-            mask = assign == c
-            if mask.any():
-                vlad[c] = (x[mask] - self.centroids[c]).sum(dim=0)
-        vlad = torch.sign(vlad) * torch.sqrt(vlad.abs() + 1e-12)  # power-norm
-        vlad = vlad.flatten()
-        return vlad / (vlad.norm() + 1e-12)                       # L2-norm
     
 # --------------------------------------------------------------------------- #
 # Core monocular VO
 # --------------------------------------------------------------------------- #
 class MonocularVO:
     def __init__(self, K, n_features=3000, min_matches=8, ratio=0.75):
-
+        
         # Store the device so feature extraction, matching, and VLAD can
         # consistently use the same CPU/GPU device.
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
+        
+
+
 
         # 1. Initialize XFeat
         self.xfeat = XFeat().to(self.device).eval()
 
         self.K = K
 
+        self.lc = lc(self._match_xFeat,self.K,self.device)
+
+
         # Store the requested feature count so regular-frame detection
         # uses the same value instead of a hardcoded feature limit.
         self.n_features = n_features
 
-        # VLAD provides a fixed-length global descriptor for keyframe
-        # retrieval during loop-closure detection.
-        self.vlad = VLAD(descriptor_dim=64, n_clusters=32, device=self.device)
+
         self.min_matches = min_matches
         self.ratio = ratio
 
@@ -146,14 +90,12 @@ class MonocularVO:
         self.prev_kp = None
         self.prev_feats = None
 
-        self.prev_keyframe = None
-        self.keyframes = [] #stores all the keyframes in this list, to be looked out during loop closure checks
-        self.next_keyframe_id = 0
+
 
         self.cur_R = np.eye(3)
         self.cur_t = np.zeros((3, 1))
 
-        # trajectory[i] is the 3x1 camera position at frame i.
+        # trajectory[i] is the 3x1 camera position at frame i
         # Every frame appends the current pose, even if no new inliers were found.
         self.trajectory = []
         self.num_inlier_matches = 0
@@ -227,287 +169,13 @@ class MonocularVO:
         # Store matches as raw (N, 2) descriptor-index pairs instead of
         # constructing cv2.DMatch objects.
         return np.stack([idx0, idx1], axis=1)
-    def _create_keyframe(self, frame_count, kp, feats):
-        # Keyframes keep descriptors on the CPU so large descriptor banks do
-        # not remain permanently allocated in GPU memory.
-        if isinstance(feats, torch.Tensor):
-            feats_cpu = feats.detach().cpu()
-        else:
-            feats_cpu = torch.tensor(feats)
+    
 
-        # Once VLAD has been fitted, use it to create the keyframe's global
-        # descriptor. Before that point, use mean-pooling as a temporary
-        # fallback descriptor.
-        if self.vlad.centroids is not None:
-            global_descriptor = self.vlad.encode(feats_cpu.to(self.device))
-        else:
-            global_descriptor = feats_cpu.mean(dim=0)
+    
 
-        kf = KeyFrame(
-            self.next_keyframe_id,
-            frame_count,
-            self.cur_R,
-            self.cur_t,
-            kp,
-            feats_cpu,
-            global_descriptor=global_descriptor,
-        )
-        self.keyframes.append(kf)
-        self.prev_keyframe = kf
-        self.next_keyframe_id += 1
-        self._maybe_fit_vlad()
-
-    def _maybe_fit_vlad(self):
-        # Wait until enough keyframes exist to build a representative VLAD
-        # codebook, then fit it once and re-encode all existing keyframes.
-        if self.vlad.centroids is not None or len(self.keyframes) < 20:
-            return
-
-        pool = torch.cat([kf.descriptors.to(self.device) for kf in self.keyframes], dim=0)
-        self.vlad.fit(pool)
-
-        # Existing keyframes were initially encoded using mean-pooling.
-        # Re-encode them now that the shared VLAD codebook exists.
-        for kf in self.keyframes:
-            kf.global_descriptor = self.vlad.encode(kf.descriptors.to(self.device))
-
-    def _process_keyframes(self, n_candidates=5, similarity_thresh=0.85):
-        current = self.prev_keyframe
-        eligible = [kf for kf in self.keyframes if current.id - kf.id >= 50]
-        if not eligible:
-            return []
-
-        # Stack all global descriptors into one matrix so cosine similarities
-        # against the current keyframe can be computed in a single batched
-        # matrix multiplication instead of one Python loop per keyframe.
-        bank = torch.stack([kf.global_descriptor for kf in eligible])   # (M, k*d), already L2-normed
-        scores = bank @ current.global_descriptor                       # (M,) cosine sim in one matmul
-        scores_np = scores.cpu()
-        
-        keep = scores_np >= similarity_thresh
-        idxs = keep.nonzero(as_tuple=True)[0]
-        if len(idxs) == 0:
-            
-            return []
-        print("What")
-        ranked = sorted(((scores_np[i].item(), eligible[i]) for i in idxs), key=lambda x: x[0], reverse=True)
-        return ranked[:n_candidates]
-
-    def _prefilter_candidates(self, candidates, current_frame, sim_thresh=0.9, min_count=100):
-        """
-        Cheap one-shot ranking of candidates using a single batched matmul.
-        Returns candidates re-sorted by rough inlier count, keeping only those
-        that clear min_count. This does not replace the full geometric check.
-        """
-        # Normalize local descriptors so their dot product represents cosine
-        # similarity during the cheap candidate prefilter.
-        cur_desc = current_frame.descriptors.to(self.device)
-        cur_desc = torch.nn.functional.normalize(cur_desc, dim=1)
-
-        cat_desc = []
-        boundaries = []  # (candidate, score, start, end)
-        offset = 0
-        for score, cand in candidates:
-            d = torch.nn.functional.normalize(cand.descriptors.to(self.device), dim=1)
-            boundaries.append((cand, score, offset, offset + d.shape[0]))
-            cat_desc.append(d)
-            offset += d.shape[0]
-
-        if not cat_desc:
-            return []
-
-        # Combine every candidate's descriptors into one matrix so all
-        # candidate-to-current-frame similarities can be evaluated together.
-        cat_desc = torch.cat(cat_desc, dim=0)
-
-        with torch.inference_mode():
-            sim = cat_desc @ cur_desc.T
-
-            # For every candidate descriptor, keep only its strongest
-            # similarity against any descriptor in the current frame.
-            best_sim, _ = sim.max(dim=1)
-
-        ranked = []
-        for cand, score, start, end in boundaries:
-            # This is only a rough match count used to reject weak candidates
-            # before running the expensive XFeat + RANSAC verification.
-            rough_count = int((best_sim[start:end] > sim_thresh).sum().item())
-            if rough_count >= min_count:
-                ranked.append((rough_count, score, cand))
-
-        # Process candidates with the strongest rough descriptor support first.
-        ranked.sort(key=lambda x: x[0], reverse=True)
-        return [(score, cand) for _, score, cand in ranked]
-
-    def _update_trajectory(self, candidate, current_frame_number): #Gradually ramps up the amount of correction in order to correct the trajectory
-
-
-        # Save the current pose
-
-
-        old_R = self.cur_R.copy()
-        old_t = self.cur_t.copy()
-
-        # Calculate the rotational error
-        R_error = candidate.pose_R @ old_R.T
-        # Calculate the translational error
-        t_error = candidate.pose_T - R_error @ old_t
-
-        # Start from candidate, end at current frame, as those are the most relevant frames to correct. The rest of the trajectory is left unchanged.
-
-        start = max(0, candidate.frame_number)
-        end = min(current_frame_number, len(self.trajectory) - 1)
-
-        # Check if the range is valid
-        if start >= end:
-            print("Loop correction skipped: invalid trajectory range.")
-            return
-
-        #  Apply the correction gradually
-        total_frames = end - start
-
-
-        for i in range(start, end + 1):
-
-            alpha = (i - start) / total_frames # How far along the trajectory we are, from 0.0 (candidate) to 1.0 (current frame)
-
-
-            # Translation correction
-            original_position = self.trajectory[i]
-
-            corrected_position = (
-                R_error @ original_position
-                + t_error
-            )
-
-            # Blend between original and corrected position.
-
-            self.trajectory[i] = (
-                (1.0 - alpha) * original_position
-                + alpha * corrected_position
-            )
-
-        # Correct keyframes using the same gradual correction
-
-        for kf in self.keyframes:
-
-            if kf.id < candidate.id:
-                continue
-
-            
-            if kf.frame_number > current_frame_number:
-                continue
-
-            # Candidate itself should remain fixed.
-            if kf.id == candidate.id:
-                continue
-
-            # Determine where this keyframe lies between the candidate and current frame.
-            alpha = (
-                kf.frame_number - candidate.frame_number
-            ) / (
-                current_frame_number - candidate.frame_number
-            )
-
-            alpha = np.clip(alpha, 0.0, 1.0)
-
-            # Calculate correction
-
-
-            corrected_t = (
-                R_error @ kf.pose_T
-                + t_error
-            )
-
-            corrected_R = (
-                R_error @ kf.pose_R
-            )
-            #Translation correction
-
-            kf.pose_T = (
-                (1.0 - alpha) * kf.pose_T
-                + alpha * corrected_t
-            )
-
-            # Rotation
-            R_delta = corrected_R @ kf.pose_R.T
-
-            rvec, _ = cv2.Rodrigues(R_delta)
-
-            interpolated_rvec = rvec * alpha
-
-            R_interpolated, _ = cv2.Rodrigues(interpolated_rvec)
-
-            kf.pose_R = (
-                R_interpolated @ kf.pose_R
-            )
-
-        #Current pose should match candidate's pose
-
-        self.cur_t = self.trajectory[end].copy()
-        self.cur_R = R_error @ old_R
-
-        #Debug Information:
-
-        print("\n========== LOOP CLOSURE ==========")
-        print("Candidate KF:", candidate.id)
-        print("Candidate frame:", candidate.frame_number)
-        print("Current frame:", current_frame_number)
-        print("==================================\n")
-    def _process_candidates(self,candidates):
-        current_frame = self.prev_keyframe  # Grab the current keyframe
-
-        # Cheap descriptor-level filtering happens before expensive XFeat
-        # matching and geometric verification, reducing the number of
-        # candidates that reach the RANSAC stage.
-        candidates = self._prefilter_candidates(candidates, current_frame)
-        if not candidates:
-            return None
-
-        for (score, candidate) in candidates:
-            matches = self._match_xFeat(
-                candidate.descriptors,
-                current_frame.descriptors
-            )
-            if matches.shape[0] < 100:
-                continue
-
-            # Matches are raw descriptor-index pairs, so NumPy fancy indexing
-            # directly retrieves the corresponding keypoint coordinates.
-            pts_old = np.float32(candidate.keypoints[matches[:, 0]])
-            pts_new = np.float32(current_frame.keypoints[matches[:, 1]])
-            E, mask = cv2.findEssentialMat(
-                pts_new,
-                pts_old,
-                self.K,
-                method=cv2.RANSAC,
-                prob=0.999,
-                threshold=1.0
-            )
-            if E is None:
-                continue
-            num_inliers, R, t, pose_mask = cv2.recoverPose(
-                E,
-                pts_new,
-                pts_old,
-                self.K,
-                mask=mask
-            )
-
-            ratio = num_inliers / len(matches)
-
-            if num_inliers > 150 and ratio > 0.5:
-
-                print(
-                    f"LOOP FOUND! "
-                    f"KF {current_frame.id} -> KF {candidate.id} "
-                    f"({num_inliers}/{len(matches)})"
-                    f"(Score: {score:.3f})"
-                )
-
-                return candidate, R, t
-
-        return None
+    
+    
+    
 
     def process_frame(self, frame, frame_count, scale=1.0):
         """
@@ -572,44 +240,18 @@ class MonocularVO:
         # update was rejected. This keeps trajectory length 1:1 with frames.
         self.trajectory.append(self.cur_t.copy())
 
-        # Create new keyframes and store them when the camera has moved or
-        # rotated far enough from the previous keyframe.
-        if len(self.keyframes) > 0:
-            translation = np.linalg.norm(
-                self.cur_t - self.prev_keyframe.pose_T
-            )
-            R_rel = self.cur_R @ self.prev_keyframe.pose_R.T
+        traj = self.lc.process_loop_check(self.cur_R, self.cur_t, frame_count, kp_full, feats_full,self.trajectory)
 
-            trace = np.trace(R_rel)
+        if traj:
+            self.trajectory = traj
 
-            # Prevents errors
-            value = np.clip((trace - 1.0) / 2.0, -1.0, 1.0)
-
-            rotation = np.degrees(np.arccos(value))  # Rotation in degrees
-
-            if translation > 0.6 or rotation > 15:
-                print("Keyframe created: ", self.next_keyframe_id, " translation: ", translation, " rotation: ", int(rotation))
-                self._create_keyframe(frame_count, kp_full, feats_full)
-                candidates = self._process_keyframes(50,0.1)
-                if candidates:
-                    result = self._process_candidates(candidates)
-                    if result:
-                        self._update_trajectory(result[0], frame_count)
-        else:
-            print("Keyframe created: ", self.next_keyframe_id)
-
-            # The first keyframe also uses the full dense 4096-feature
-            # detection so it is not less descriptive than later keyframes.
-            self._create_keyframe(frame_count, kp_full, feats_full)
 
 
         
 
         self.prev_gray, self.prev_kp, self.prev_feats = gray, kp_np, feats
         return kp_np, matches
-# --------------------------------------------------------------------------- #
-# Additional Math Helper Functions
-# --------------------------------------------------------------------------- #
+
 # --------------------------------------------------------------------------- #
 # Visualization helpers
 # --------------------------------------------------------------------------- #
