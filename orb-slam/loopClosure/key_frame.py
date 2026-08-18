@@ -8,6 +8,8 @@ class KeyFrame:
         pose_T,
         keypoints,
         descriptors,
+        orb_kp,
+        orb_des,
         global_descriptor=None,
     ):
         self.id = id
@@ -15,6 +17,8 @@ class KeyFrame:
         self.frame_number = frame_number
         self.keypoints = keypoints
         self.descriptors = descriptors
+        self.orb_kp = orb_kp
+        self.orb_des = orb_des
 
         # Use VLAD as the global descriptor when one has already been
         # computed; otherwise fall back to mean-pooling until VLAD is fitted.

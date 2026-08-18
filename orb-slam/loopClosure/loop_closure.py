@@ -23,18 +23,19 @@ import time
 # VLAD (Vector of Locally Aggregated Descriptors) implementation
 # --------------------------------------------------------------------------- #
 class LoopClosure:
-    def __init__(self, match_function, K, device=torch.device("cpu")):
+    def __init__(self, match_function, K, model, device=torch.device("cpu")):
         self.match_function = match_function
         self.device = device
         self.K = K
         # VLAD provides a fixed-length global descriptor for keyframe
         # retrieval during loop-closure detection.
-        self.vlad = VLAD(descriptor_dim=64, n_clusters=32, device=self.device)
+        self.vlad = VLAD(descriptor_dim=32, n_clusters=32, device=self.device)#change descriptor dim to 64 when using xfeat
         self.prev_keyframe = None
         self.next_keyframe_id = 0
         self.trajectory = []
         self.keyframes = [] #stores all the keyframes in this list, to be looked out during loop closure checks
-    def _create_keyframe(self, frame_count, kp, feats):
+        self.model = model
+    def _create_keyframe(self, frame_count, kp, feats, orb_kp, orb_des):
             # Keyframes keep descriptors on the CPU so large descriptor banks do
             # not remain permanently allocated in GPU memory.
             if isinstance(feats, torch.Tensor):
@@ -49,7 +50,6 @@ class LoopClosure:
                 global_descriptor = self.vlad.encode(feats_cpu.to(self.device))
             else:
                 global_descriptor = feats_cpu.mean(dim=0)
-    
             kf = KeyFrame(
                 self.next_keyframe_id,
                 frame_count,
@@ -57,13 +57,15 @@ class LoopClosure:
                 self.cur_t,
                 kp,
                 feats_cpu,
+                orb_kp,
+                orb_des,
                 global_descriptor=global_descriptor,
             )
             self.keyframes.append(kf)
             self.prev_keyframe = kf
             self.next_keyframe_id += 1
             self._maybe_fit_vlad()
-    def _process_keyframes(self, n_candidates=3, similarity_thresh=0.85):
+    def _process_keyframes(self, n_candidates=10, similarity_thresh=0.1):
             debug_start_time = time.perf_counter()
             current = self.prev_keyframe
             eligible = [kf for kf in self.keyframes if current.id - kf.id >= 50]
@@ -90,7 +92,7 @@ class LoopClosure:
 
             return ranked[:n_candidates]
     
-    def _prefilter_candidates(self, candidates, current_frame, sim_thresh=0.9, min_count=100):
+    def _prefilter_candidates(self, candidates, current_frame, sim_thresh=0.1, min_count=100):
 
         debug_start_time = time.perf_counter()
 
@@ -150,24 +152,35 @@ class LoopClosure:
             # Cheap descriptor-level filtering happens before expensive XFeat
             # matching and geometric verification, reducing the number of
             # candidates that reach the RANSAC stage.
-            candidates = self._prefilter_candidates(candidates, current_frame)
+            #candidates = self._prefilter_candidates(candidates, current_frame)
             debug_start_time = time.perf_counter()
             if not candidates:
                 return None
             
             for (score, candidate) in candidates:
                 print("Score: ", score, " Candidate KF: ", candidate.id, " Current KF: ", current_frame.id)
-                matches = self.match_function(
-                    candidate.descriptors,
-                    current_frame.descriptors
-                )
-                if matches.shape[0] < 100:
-                    continue
+                # check if using xFeat or sift
+                if self.model == "xFeat":
+                    matches = self.match_function(
+                        candidate.descriptors,
+                        current_frame.descriptors
+                        )
+                    if matches.shape[0] < 100:
+                        continue
+                    # Matches are raw descriptor-index pairs, so NumPy fancy indexing
+                    # directly retrieves the corresponding keypoint coordinates.
+                    pts_old = np.float32(candidate.keypoints[matches[:, 0]])
+                    pts_new = np.float32(current_frame.keypoints[matches[:, 1]])
+                else:
+                     matches = self.match_function(
+                        candidate.orb_des,
+                        current_frame.orb_des
+                        ) 
+                     if len(matches) < 100:
+                          continue
+                     pts_old = np.float32([candidate.orb_kp[m.queryIdx].pt for m in matches])
+                     pts_new = np.float32([current_frame.orb_kp[m.trainIdx].pt for m in matches])
 
-                # Matches are raw descriptor-index pairs, so NumPy fancy indexing
-                # directly retrieves the corresponding keypoint coordinates.
-                pts_old = np.float32(candidate.keypoints[matches[:, 0]])
-                pts_new = np.float32(current_frame.keypoints[matches[:, 1]])
                 E, mask = cv2.findEssentialMat(
                     pts_new,
                     pts_old,
@@ -185,9 +198,13 @@ class LoopClosure:
                     self.K,
                     mask=mask
                 )
+                distance = np.linalg.norm(t)
 
                 ratio = num_inliers / len(matches)
 
+                yaw_rad = np.arctan2(R[0, 2], R[2, 2])
+                yaw_deg = np.degrees(yaw_rad)
+                print(num_inliers, ratio)
                 if num_inliers > 150 and ratio > 0.5:
 
                     print(
@@ -332,14 +349,14 @@ class LoopClosure:
             for kf in self.keyframes:
                 kf.global_descriptor = self.vlad.encode(kf.descriptors.to(self.device))
 
-    def process_loop_check(self, cur_R, cur_t, frame_count, kp_full, feats_full, trajectory):
+    def process_loop_check(self, cur_R, cur_t, frame_count, kp_full, feats_full, orb_kp, orb_des, trajectory):
         self.cur_t = cur_t
         self.cur_R = cur_R
         self.trajectory = trajectory
 
          # Create new keyframes and store them when the camera has moved or
         # rotated far enough from the previous keyframe.
-        if len(self.keyframes) > 0:
+        if len(self.keyframes) > 50:
             translation = np.linalg.norm(
                 self.cur_t - self.prev_keyframe.pose_T
             )
@@ -352,19 +369,21 @@ class LoopClosure:
 
             rotation = np.degrees(np.arccos(value))  # Rotation in degrees
 
-            if translation > 0.6 or rotation > 15:
+            #if translation > 0.6 and rotation > 15:
+            if frame_count % 15 == 0:
                 print("Keyframe created: ", self.next_keyframe_id, " translation: ", translation, " rotation: ", int(rotation))
-                self._create_keyframe(frame_count, kp_full, feats_full)
-                candidates = self._process_keyframes(50,0.1)
+                self._create_keyframe(frame_count, kp_full, feats_full, orb_kp, orb_des)
+                candidates = self._process_keyframes()
                 if candidates:
                     result = self._process_candidates(candidates)
                     if result:
                         self._update_trajectory(result[0], frame_count)
+                        #self.trajectory[-1] = self.trajectory[result[0].frame_number]
                         return self.trajectory
         else:
             print("Keyframe created: ", self.next_keyframe_id)
 
             # The first keyframe also uses the full dense 4096-feature
             # detection so it is not less descriptive than later keyframes.
-            self._create_keyframe(frame_count, kp_full, feats_full)
+            self._create_keyframe(frame_count, kp_full, feats_full, orb_kp, orb_des)
 

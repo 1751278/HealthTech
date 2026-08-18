@@ -57,6 +57,9 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
+import re
+from loopClosure.loop_closure import LoopClosure as lc
+from accelerated_features.modules.xfeat import XFeat
 
 try:
     from python_orb_slam3 import ORBExtractor
@@ -119,7 +122,8 @@ class FrameReader:
 # --------------------------------------------------------------------------- #
 class MonocularVO:
     def __init__(self, K, n_features=3000, min_matches=8, ratio=0.75):
-
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.n_features = n_features
         self.K = K
         # ORB-SLAM3's own feature extractor (quad-tree keypoint distribution),
         # API-compatible with cv2.ORB_create()'s detectAndCompute().
@@ -144,6 +148,8 @@ class MonocularVO:
         self.prev_kp = None
         self.prev_des = None
 
+        self.prev_feats = None
+
         self.cur_R = np.eye(3)
         self.cur_t = np.zeros((3, 1))
 
@@ -151,6 +157,9 @@ class MonocularVO:
         # unless an external scale is supplied every frame)
         self.trajectory = [self.cur_t.copy()]
         self.num_inlier_matches = 0
+
+        self.xfeat = XFeat().to(self.device).eval()
+        self.lc = lc(self._match,self.K,"orb", self.device)
 
     @staticmethod
     def to_gray(frame):
@@ -160,6 +169,39 @@ class MonocularVO:
 
     def _detect(self, gray):
         return self.orb.detectAndCompute(gray, None)
+    
+    def _convert_cv2_to_xfeat(self, cv_kpts, cv_descs, device="cpu"):
+        """
+        Converts OpenCV keypoints and descriptors to the XFeat dictionary format.
+        """
+        if not cv_kpts or cv_descs is None or len(cv_kpts) == 0:
+            return {
+                "keypoints": torch.empty((0, 2), dtype=torch.float32, device=device),
+                "scores": torch.empty((0,), dtype=torch.float32, device=device),
+                "descriptors": torch.empty((0, cv_descs.shape[1] if cv_descs is not None else 64), dtype=torch.float32, device=device)
+            }
+
+        # 1. Extract (x, y) coordinates from cv2.KeyPoint objects
+        kpts_list = [kp.pt for kp in cv_kpts]
+        xfeat_kpts = torch.tensor(kpts_list, dtype=torch.float32, device=device)
+
+        # 2. Extract responses/scores from cv2.KeyPoint objects
+        scores_list = [kp.response for kp in cv_kpts]
+        xfeat_scores = torch.tensor(scores_list, dtype=torch.float32, device=device)
+
+        # 3. Convert descriptors NumPy array to PyTorch Tensor
+        # Ensure descriptors are float32 (ORB might be uint8, convert if needed)
+        if cv_descs.dtype == np.uint8:
+            cv_descs = cv_descs.astype(np.float32)
+            
+        xfeat_descs = torch.from_numpy(cv_descs).to(device=device, dtype=torch.float32)
+
+        # Return the exact dictionary structure XFeat creates
+        return {
+            "keypoints": xfeat_kpts,      # Shape: (N, 2)
+            "scores": xfeat_scores,        # Shape: (N,)
+            "descriptors": xfeat_descs     # Shape: (N, D)
+            }
     
     def _match(self, des1, des2):
         if des1 is None or des2 is None or len(des1) < 2 or len(des2) < 2:
@@ -173,8 +215,50 @@ class MonocularVO:
             if m.distance < self.ratio * n.distance:
                 good.append(m)
         return good
-
-    def process_frame(self, frame, scale=1.0):
+    
+    def _match_xFeat(self, feats0, feats1):
+            # Return an empty index array if either descriptor set is unavailable.
+            if feats0 is None or feats1 is None:
+                return np.zeros((0, 2), dtype=np.int64)
+    
+            # Only transfer descriptors when they are not already on the correct
+            # device, avoiding unnecessary CPU/GPU transfers.
+            if feats0.device != self.device:
+                feats0 = feats0.to(self.device)
+            if feats1.device != self.device:
+                feats1 = feats1.to(self.device)
+    
+            # XFeat matching is inference-only, so gradients are unnecessary.
+            with torch.inference_mode():
+                match = self.xfeat.match(feats0, feats1)
+    
+            if isinstance(match, (tuple, list)):
+                idx0, idx1 = match
+            else:
+                match = torch.as_tensor(match)
+    
+                # Convert XFeat's possible match formats into two arrays of
+                # corresponding descriptor indices.
+                if match.ndim == 2 and match.shape[1] >= 2:
+                    idx0, idx1 = match[:, 0], match[:, 1]
+                elif match.ndim == 1 and match.numel() % 2 == 0:
+                    idx0, idx1 = match[0::2], match[1::2]
+                else:
+                    return np.zeros((0, 2), dtype=np.int64)
+    
+            if isinstance(idx0, torch.Tensor):
+                idx0 = idx0.cpu().numpy()
+                idx1 = idx1.cpu().numpy()
+            idx0 = np.asarray(idx0, dtype=np.int64)
+            idx1 = np.asarray(idx1, dtype=np.int64)
+            if idx0.size == 0:
+                return np.zeros((0, 2), dtype=np.int64)
+    
+            # Store matches as raw (N, 2) descriptor-index pairs instead of
+            # constructing cv2.DMatch objects.
+            return np.stack([idx0, idx1], axis=1)
+    
+    def process_frame(self, frame, frame_count, scale=1.0):
         """
         Processes one frame, updates the accumulated pose, and returns
         (kp, matches) for visualization purposes.
@@ -182,15 +266,22 @@ class MonocularVO:
         
         gray = self.to_gray(frame)
         kp, des = self._detect(gray)
+        xFeat_format = self._convert_cv2_to_xfeat(kp, des)
+        kp_full = xFeat_format['keypoints'].cpu().numpy()
+        feats_full = xFeat_format['descriptors'].cpu().numpy()
+
+        feats = feats_full[: self.n_features]
+        kp_np = kp_full[: self.n_features]
 
         if self.prev_gray is None:
-            self.prev_gray, self.prev_kp, self.prev_des = gray, kp, des
+            self.prev_gray, self.prev_kp, self.prev_des, self.prev_feats = gray, kp, des, feats
             return kp, []
 
         matches = self._match(self.prev_des, des)
+        #matches = self._match_xFeat(self.prev_feats, feats)
 
         if len(matches) < self.min_matches:
-            self.prev_gray, self.prev_kp, self.prev_des = gray, kp, des
+            self.prev_gray, self.prev_kp, self.prev_des, self.prev_feats = gray, kp, des, feats
             return kp, matches
         
 
@@ -202,7 +293,7 @@ class MonocularVO:
         )
 
         if E is None or E.shape != (3, 3):
-            self.prev_gray, self.prev_kp, self.prev_des = gray, kp, des
+            self.prev_gray, self.prev_kp, self.prev_des, self.prev_feats = gray, kp, des, feats
             return kp, matches
 
         _, R, t, pose_mask = cv2.recoverPose(E, pts_cur, pts_prev, self.K, mask=mask)
@@ -212,12 +303,20 @@ class MonocularVO:
         if self.num_inlier_matches >= self.min_matches:
             self.cur_t = self.cur_t + scale * (self.cur_R @ t)
 
-            print(np.asarray(self.cur_t, dtype=np.float64).reshape(3))# print 3d position 
+            #print(np.asarray(self.cur_t, dtype=np.float64).reshape(3))# print 3d position 
 
             self.cur_R = R @ self.cur_R
-            self.trajectory.append(self.cur_t.copy())
+    
+        # Record the pose on every frame, including frames where the pose
+        # update was rejected. This keeps trajectory length 1:1 with frames.
+        self.trajectory.append(self.cur_t.copy())
 
-        self.prev_gray, self.prev_kp, self.prev_des = gray, kp, des
+        traj = self.lc.process_loop_check(self.cur_R, self.cur_t, frame_count, kp_full, feats_full, kp, des, self.trajectory)
+
+        if traj:
+            self.trajectory = traj
+
+        self.prev_gray, self.prev_kp, self.prev_des, self.prev_feats = gray, kp, des, feats
         return kp, matches
 
 
@@ -268,15 +367,26 @@ def save_matplotlib_plot(trajectory, out_path="trajectory.png"):
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
+CALIBRATION_PATH = "cameraCalibrationData/calibrationMetrics/kenshi.txt"
+CALIBRATION_VALS = []
+RES_SCALE = 1/2.0
+with open(CALIBRATION_PATH, "r") as file:
+    for line in file:
+        # Regex to find integers and floating-point numbers
+        pattern = r'[-+]?\d*\.\d+|\d+'
+        if re.findall(pattern, line):
+            CALIBRATION_VALS.append(float(re.findall(pattern, line)[0]))
+print(CALIBRATION_VALS)
+
 def main():
     parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
-    parser.add_argument("--source", default="vo_videos/vid2.mp4",
+    parser.add_argument("--source", default="vo_videos/vid1.mp4",
                          help="Webcam index (e.g. 0), path to a video file, or path to a folder of image frames")
-    parser.add_argument("--fx", type=float, default=483.30/2.0, help="Focal length x (pixels)")
-    parser.add_argument("--fy", type=float, default=483.69/2.0, help="Focal length y (pixels)")
-    parser.add_argument("--cx", type=float, default=360.41/2.0, help="Principal point x")
-    parser.add_argument("--cy", type=float, default=639.01/2.0, help="Principal point y")
-    parser.add_argument("--scale", type=float, default=0.2,
+    parser.add_argument("--fx", type=float, default=CALIBRATION_VALS[0]*RES_SCALE, help="Focal length x (pixels)")
+    parser.add_argument("--fy", type=float, default=CALIBRATION_VALS[1]*RES_SCALE, help="Focal length y (pixels)")
+    parser.add_argument("--cx", type=float, default=CALIBRATION_VALS[2]*RES_SCALE, help="Principal point x")
+    parser.add_argument("--cy", type=float, default=CALIBRATION_VALS[3]*RES_SCALE, help="Principal point y")
+    parser.add_argument("--scale", type=float, default=1.0,
                          help="Per-frame translation scale factor. Monocular VO has no absolute "
                               "scale; supply this from external info (e.g. constant speed * dt) "
                               "or leave at 1.0 for a scale-free trajectory shape.")
@@ -304,9 +414,9 @@ def main():
             ok, frame = reader.read()
             if not ok or frame is None:
                 break
-            frame = cv2.resize(frame, (int(720*1/2.0), int(1280*1/2.0)))  # Resize for faster processing
+            frame = cv2.resize(frame, (int(720*RES_SCALE), int(1280*RES_SCALE)))  # Resize for faster processing
             if frame_count % FRAME_WINDOW == 0:
-                kp, matches = vo.process_frame(frame, scale=args.scale)
+                kp, matches = vo.process_frame(frame, frame_count, scale=args.scale)
                 traj_canvas = draw_trajectory_canvas(vo.trajectory)
             frame_count += 1
 

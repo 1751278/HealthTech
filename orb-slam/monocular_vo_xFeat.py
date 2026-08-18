@@ -7,7 +7,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 from accelerated_features.modules.xfeat import XFeat
+from accelerated_features.modules.lighterglue import LighterGlue
 from loopClosure.loop_closure import LoopClosure as lc
+import re
 # --------------------------------------------------------------------------- #
 # Frame source abstraction: webcam index, video file, or folder of images
 # --------------------------------------------------------------------------- #
@@ -65,17 +67,13 @@ class MonocularVO:
         # consistently use the same CPU/GPU device.
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-
-        
-
-
-
         # 1. Initialize XFeat
         self.xfeat = XFeat().to(self.device).eval()
+        self.matcher = LighterGlue().to(self.device).eval()
 
         self.K = K
 
-        self.lc = lc(self._match_xFeat,self.K,self.device)
+        self.lc = lc(self._match_xFeat,self.K, "xFeat", self.device)
 
 
         # Store the requested feature count so regular-frame detection
@@ -89,6 +87,7 @@ class MonocularVO:
         self.prev_gray = None
         self.prev_kp = None
         self.prev_feats = None
+        self.prev_output = None
 
 
 
@@ -170,11 +169,26 @@ class MonocularVO:
         # constructing cv2.DMatch objects.
         return np.stack([idx0, idx1], axis=1)
     
+    def _match_LighterGlue(self, feats0, feats1, frame):
+        input_dict = {
+            "keypoints0": feats0["keypoints"][: self.n_features].unsqueeze(0),
+            "descriptors0": feats0["descriptors"][: self.n_features].unsqueeze(0),
+            "image_size0": torch.tensor([[frame.shape[1], frame.shape[0]]], device=self.device),
+            "keypoints1": feats1["keypoints"][: self.n_features].unsqueeze(0),
+            "descriptors1": feats1["descriptors"][: self.n_features].unsqueeze(0),
+            "image_size1": torch.tensor([[frame.shape[1], frame.shape[0]]], device=self.device),
+        }
+        with torch.inference_mode():
+            output = self.matcher(input_dict)
+            
+            # Extract matched pairing indices and remove batch packaging
+            matches = output["matches"][0].cpu().numpy()  # Matrix size: [M, 2]
+            scores = output["scores"][0].cpu().numpy()   # Match confidences: [M]
+        idx0, idx1 = matches[:, 0], matches[:, 1]
+        return np.stack([idx0, idx1], axis=1)
+        
 
-    
 
-    
-    
     
 
     def process_frame(self, frame, frame_count, scale=1.0):
@@ -196,7 +210,7 @@ class MonocularVO:
         feats = feats_full[: self.n_features]
 
         if self.prev_gray is None:
-            self.prev_gray, self.prev_kp, self.prev_feats = gray, kp_np, feats
+            self.prev_gray, self.prev_kp, self.prev_feats, self.prev_output = gray, kp_np, feats, output
 
             # Record a trajectory point for the first frame so trajectory
             # length remains one-to-one with the number of processed frames.
@@ -204,9 +218,10 @@ class MonocularVO:
             return kp_np, np.zeros((0, 2), dtype=np.int64)
 
         matches = self._match_xFeat(self.prev_feats, feats)
+        #matches = self._match_LighterGlue(self.prev_output, output, frame)
 
         if matches.shape[0] < self.min_matches:
-            self.prev_gray, self.prev_kp, self.prev_feats = gray, kp_np, feats
+            self.prev_gray, self.prev_kp, self.prev_feats, self.prev_output = gray, kp_np, feats, output
 
             # Even when tracking fails, record the unchanged pose so every
             # processed frame has exactly one corresponding trajectory point.
@@ -221,7 +236,7 @@ class MonocularVO:
         )
 
         if E is None or E.shape != (3, 3):
-            self.prev_gray, self.prev_kp, self.prev_feats = gray, kp_np, feats
+            self.prev_gray, self.prev_kp, self.prev_feats, self.prev_output = gray, kp_np, feats, output
 
             # Keep trajectory indexing synchronized even when no valid pose
             # can be recovered from the current frame.
@@ -240,7 +255,7 @@ class MonocularVO:
         # update was rejected. This keeps trajectory length 1:1 with frames.
         self.trajectory.append(self.cur_t.copy())
 
-        traj = self.lc.process_loop_check(self.cur_R, self.cur_t, frame_count, kp_full, feats_full,self.trajectory)
+        traj = self.lc.process_loop_check(self.cur_R, self.cur_t, frame_count, kp_full, feats_full,0,0,self.trajectory)
 
         if traj:
             self.trajectory = traj
@@ -249,7 +264,7 @@ class MonocularVO:
 
         
 
-        self.prev_gray, self.prev_kp, self.prev_feats = gray, kp_np, feats
+        self.prev_gray, self.prev_kp, self.prev_feats, self.prev_output = gray, kp_np, feats, output
         return kp_np, matches
 
 # --------------------------------------------------------------------------- #
@@ -299,15 +314,25 @@ def save_matplotlib_plot(trajectory, out_path="trajectory.png"):
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
+CALIBRATION_PATH = "cameraCalibrationData/calibrationMetrics/kenshi.txt"
+CALIBRATION_VALS = []
+with open(CALIBRATION_PATH, "r") as file:
+    for line in file:
+        # Regex to find integers and floating-point numbers
+        pattern = r'[-+]?\d*\.\d+|\d+'
+        if re.findall(pattern, line):
+            CALIBRATION_VALS.append(float(re.findall(pattern, line)[0]))
+print(CALIBRATION_VALS)
+
 def main():
     parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
     parser.add_argument("--source", default="vo_videos/vid1.mp4",
                          help="Webcam index (e.g. 0), path to a video file, or path to a folder of image frames")
-    parser.add_argument("--fx", type=float, default=483.30/1.5, help="Focal length x (pixels)")
-    parser.add_argument("--fy", type=float, default=483.69/1.5, help="Focal length y (pixels)")
-    parser.add_argument("--cx", type=float, default=360.41/1.5, help="Principal point x")
-    parser.add_argument("--cy", type=float, default=639.01/1.5, help="Principal point y")
-    parser.add_argument("--scale", type=float, default=0.2,
+    parser.add_argument("--fx", type=float, default=CALIBRATION_VALS[0]/2.0, help="Focal length x (pixels)")
+    parser.add_argument("--fy", type=float, default=CALIBRATION_VALS[1]/2.0, help="Focal length y (pixels)")
+    parser.add_argument("--cx", type=float, default=CALIBRATION_VALS[2]/2.0, help="Principal point x")
+    parser.add_argument("--cy", type=float, default=CALIBRATION_VALS[3]/2.0, help="Principal point y")
+    parser.add_argument("--scale", type=float, default=1.0,
                          help="Per-frame translation scale factor. Monocular VO has no absolute "
                               "scale; supply this from external info (e.g. constant speed * dt) "
                               "or leave at 1.0 for a scale-free trajectory shape.")
@@ -332,7 +357,7 @@ def main():
             ok, frame = reader.read()
             if not ok or frame is None:
                 break
-            frame = cv2.resize(frame, (int(720*1/1.5), int(1280*1/1.5)))  # Resize for faster processing
+            frame = cv2.resize(frame, (int(720*1/2.0), int(1280*1/2.0)))  # Resize for faster processing
 
             kp_np, matches = vo.process_frame(frame, frame_count, scale=args.scale)
             frame_count += 1
