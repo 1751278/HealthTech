@@ -92,7 +92,7 @@ class LoopClosure:
 
             return ranked[:n_candidates]
     
-    def _prefilter_candidates(self, candidates, current_frame, sim_thresh=0.1, min_count=100):
+    def _prefilter_candidates(self, candidates, current_frame, sim_thresh=0.7, min_count=100):
 
         debug_start_time = time.perf_counter()
 
@@ -377,8 +377,8 @@ class LoopClosure:
                 if candidates:
                     result = self._process_candidates(candidates)
                     if result:
-                        self._update_trajectory(result[0], frame_count)
-                        #self.trajectory[-1] = self.trajectory[result[0].frame_number]
+                        #self._update_trajectory(result[0], frame_count)
+                        self.trajectory[-1] = self.trajectory[result[0].frame_number]
                         return self.trajectory
         else:
             print("Keyframe created: ", self.next_keyframe_id)
