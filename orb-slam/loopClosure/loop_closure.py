@@ -34,6 +34,8 @@ class LoopClosure:
         self.next_keyframe_id = 0
         self.trajectory = []
         self.keyframes = [] #stores all the keyframes in this list, to be looked out during loop closure checks
+        self.cur_R = None
+        self.cur_t = None
         self.model = model
     def _create_keyframe(self, frame_count, kp, feats, orb_kp, orb_des):
             # Keyframes keep descriptors on the CPU so large descriptor banks do
@@ -198,14 +200,16 @@ class LoopClosure:
                     self.K,
                     mask=mask
                 )
-                distance = np.linalg.norm(t)
+                tx = t.ravel()[0]
+                tz = t.ravel()[2]
+                distance = np.linalg.norm([tx, tz])
 
                 ratio = num_inliers / len(matches)
 
                 yaw_rad = np.arctan2(R[0, 2], R[2, 2])
                 yaw_deg = np.degrees(yaw_rad)
-                print(num_inliers, ratio)
-                if num_inliers > 150 and ratio > 0.5:
+                print(f"Distance: {distance}, Yaw: {yaw_deg}")
+                if num_inliers > 150 and ratio > 0.5 and abs(yaw_deg) < 10:
 
                     print(
                         f"LOOP FOUND! "
@@ -237,7 +241,7 @@ class LoopClosure:
     
             # Start from candidate, end at current frame, as those are the most relevant frames to correct. The rest of the trajectory is left unchanged.
     
-            start = max(0, candidate.frame_number)
+            start = max(0, current_frame_number - 500)#max(0, candidate.frame_number)
             end = min(current_frame_number, len(self.trajectory) - 1)
     
             # Check if the range is valid
@@ -356,7 +360,7 @@ class LoopClosure:
 
          # Create new keyframes and store them when the camera has moved or
         # rotated far enough from the previous keyframe.
-        if len(self.keyframes) > 50:
+        if len(self.keyframes) > 30:
             translation = np.linalg.norm(
                 self.cur_t - self.prev_keyframe.pose_T
             )
@@ -377,8 +381,8 @@ class LoopClosure:
                 if candidates:
                     result = self._process_candidates(candidates)
                     if result:
-                        #self._update_trajectory(result[0], frame_count)
-                        self.trajectory[-1] = self.trajectory[result[0].frame_number]
+                        self._update_trajectory(result[0], frame_count)
+                        #self.trajectory[-1] = self.trajectory[result[0].frame_number]
                         return self.trajectory
         else:
             print("Keyframe created: ", self.next_keyframe_id)

@@ -315,6 +315,9 @@ class MonocularVO:
 
         if traj:
             self.trajectory = traj
+            self.cur_R = self.lc.cur_R
+            self.cur_t = self.lc.cur_t
+
 
         self.prev_gray, self.prev_kp, self.prev_des, self.prev_feats = gray, kp, des, feats
         return kp, matches
@@ -369,7 +372,7 @@ def save_matplotlib_plot(trajectory, out_path="trajectory.png"):
 # --------------------------------------------------------------------------- #
 CALIBRATION_PATH = "cameraCalibrationData/calibrationMetrics/kenshi.txt"
 CALIBRATION_VALS = []
-RES_SCALE = 1/2.0
+RES_SCALE = 1/1.5
 with open(CALIBRATION_PATH, "r") as file:
     for line in file:
         # Regex to find integers and floating-point numbers
