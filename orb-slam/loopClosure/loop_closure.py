@@ -225,7 +225,7 @@ class LoopClosure:
             debug_duration = debug_end_time - debug_start_time
             print(debug_duration, " seconds for processing candidates")
             return None
-    def _update_trajectory(self, candidate, current_frame_number): #Gradually ramps up the amount of correction in order to correct the trajectory
+    def _update_trajectory(self, candidate, R, t, current_frame_number): #Gradually ramps up the amount of correction in order to correct the trajectory
     
     
             # Save the current pose
@@ -332,6 +332,10 @@ class LoopClosure:
     
             self.cur_t = self.trajectory[end].copy()
             self.cur_R = R_error @ old_R
+            # update current pose relative to candidate frame position
+            yaw_rad = np.arctan2(R[0, 2], R[2, 2])
+            yaw_deg = np.degrees(yaw_rad)
+            self.cur_t = self.cur_t + abs(yaw_deg)*(R @ t)*0.5
     
             #Debug Information:
     
@@ -381,7 +385,7 @@ class LoopClosure:
                 if candidates:
                     result = self._process_candidates(candidates)
                     if result:
-                        self._update_trajectory(result[0], frame_count)
+                        self._update_trajectory(result[0], result[1], result[2], frame_count)
                         #self.trajectory[-1] = self.trajectory[result[0].frame_number]
                         return self.trajectory
         else:

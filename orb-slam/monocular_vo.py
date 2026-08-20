@@ -299,7 +299,6 @@ class MonocularVO:
         _, R, t, pose_mask = cv2.recoverPose(E, pts_cur, pts_prev, self.K, mask=mask)
         self.num_inlier_matches = int(pose_mask.sum()) if pose_mask is not None else 0
 
-        # Reject degenerate / low-inlier estimates
         if self.num_inlier_matches >= self.min_matches:
             self.cur_t = self.cur_t + scale * (self.cur_R @ t)
 
@@ -372,7 +371,7 @@ def save_matplotlib_plot(trajectory, out_path="trajectory.png"):
 # --------------------------------------------------------------------------- #
 CALIBRATION_PATH = "cameraCalibrationData/calibrationMetrics/kenshi.txt"
 CALIBRATION_VALS = []
-RES_SCALE = 1/1.5
+RES_SCALE = 1/2.0
 with open(CALIBRATION_PATH, "r") as file:
     for line in file:
         # Regex to find integers and floating-point numbers
@@ -410,6 +409,7 @@ def main():
 
     FRAME_WINDOW = 1
     frame_count = 0
+    old_frame = None
     try:
         kp, matches = None, None
         traj_canvas = None
@@ -421,6 +421,7 @@ def main():
             if frame_count % FRAME_WINDOW == 0:
                 kp, matches = vo.process_frame(frame, frame_count, scale=args.scale)
                 traj_canvas = draw_trajectory_canvas(vo.trajectory)
+
             frame_count += 1
 
             if not args.no_display:
