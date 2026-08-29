@@ -189,7 +189,7 @@ Work Split:
 | Kenshi Kadarusman | `main.py`, `liveOCR.py`, `collectData.py`, `navigation.py` |
 | Rishan Reddy | `depth.py`, `yolo.py` |
 | Ethan Chan | `OCR.py`, `liveOCR.py`, `navigation.py` |
-| Gurveer Minhas | `vo_mapper.py` |
 | Sahir Abrar | `navigation.py`, `liveOCR.py` |
 | Ritesh Phuyal | `OCR.py`, `collectData.py` |
 | Mustafa Ahmed | `collectData.py` |
+| Samuel Ha| `OCR.py`, `navigation.py`,|
