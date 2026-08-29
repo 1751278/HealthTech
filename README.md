@@ -192,4 +192,4 @@ Work Split:
 | Sahir Abrar | `navigation.py`, `liveOCR.py` |
 | Ritesh Phuyal | `OCR.py`, `collectData.py` |
 | Mustafa Ahmed | `collectData.py` |
-| Samuel Ha| `OCR.py`, `navigation.py`,|
+| Samuel Ha| `OCR.py`, `navigation.py` |
