@@ -1,9 +1,9 @@
 #################
 # navigation.py
 # Created by Sahir Abrar May 28 2026
-# Last Updated: June 8 2026 by Kenshi & Ethan
+# Last Updated: September 15 2026 by Ethan
 # Last Change:
-# - Added a not annoying sound.
+# - Initiated merger between VO and navigation.
 # Description: This module captures video from a camera, runs depth estimation and tells the user to navigate to the door.
 # TODO:
 # - Use NCNN TFlight model for depth estimation (faster/more efficient than current DPT) -> make model run faster K
@@ -15,7 +15,7 @@
 # - try to find a qunatized version of depth model
 # - implement desk and chair avoidance with yolo model 26 S and E 
 #################
- 
+import subprocess
 import argparse
 import sys
 import collections
@@ -27,6 +27,8 @@ import soundfile as sf
 import sounddevice as sd
 import math
 import tensorflow as tf
+
+
 
 sys.path.append('./Depth-Anything-V2')
 import os
@@ -46,7 +48,20 @@ TFLITE_PATH = "depthAnythingModelFaster/midasDepth.tflite"
 DEPTH_ENCODER      = 'vits'
 DEPTH_FEATURES     = 64
 DEPTH_OUT_CHANNELS = [48, 96, 192, 384]
- 
+
+# --- VO ---
+VO_venv = os.path.abspath("./orb-slam/.venv/Scripts/python.exe")
+VO_script = os.path.abspath("./orb-slam/monocular_vo.py")
+
+result = subprocess.run(
+    [VO_venv, VO_script],
+    cwd=os.path.dirname(VO_script), #Make the cwd the same as the script so it can find the calibration data
+    capture_output=True, 
+    text=True
+)
+
+print(result)
+
 # --- Capture ---
 DEFAULT_SOURCE   = '1'    # Camera index or file path
 FRAME_WIDTH      = 360
