@@ -8,7 +8,11 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Secrets (GEMINI_API_KEY etc.) -- never commit this
+.env
 orb-slam/vo_videos/vid2.mp4
 orb-slam/cameraCalibrationData/kenshiPhoneImg/vid2.mp4
 orb-slam/trajectory.png
 orb-slam/trajectory.png
+.claude/settings.local.json

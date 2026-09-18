@@ -9,15 +9,22 @@
 import time
 import cv2
 import easyocr
+from ocr_device import resolve_ocr_reader_kwargs, TUNED_READTEXT_KWARGS
 
 model_start_time = time.perf_counter()
-ocr = easyocr.Reader(['en'], gpu=False, quantize=True) # this is the OCR reader, it takes a list of languages to read. In this case, it's set to English. It can be modified to read other languages if needed.
+_reader_kwargs = resolve_ocr_reader_kwargs()
+ocr = easyocr.Reader(['en'], gpu=_reader_kwargs["gpu"], quantize=_reader_kwargs["quantize"]) # this is the OCR reader, it takes a list of languages to read. In this case, it's set to English. It can be modified to read other languages if needed.
 model_load_time = time.perf_counter()
 
 
 
 def read_text_from_image(image):
-    result = ocr.readtext(image)
+    # readtext() params reused from liveOCR.py's already-tuned OCRWorker._loop
+    # (canvas_size/mag_ratio/link_threshold were hand-validated there for images
+    # in this same resolution range). Without them, easyocr falls back to its
+    # internal defaults (canvas_size=2560, mag_ratio=1.0) and needlessly
+    # upscales our already-resized 640x480 image toward a 2560px canvas.
+    result = ocr.readtext(image, **TUNED_READTEXT_KWARGS)
     for (bbox, text, prob) in result:
         print(f"Text: {text}, Confidence: {prob}")
     return result
@@ -27,7 +34,9 @@ def read_text_from_image(image):
 def main():
     print("Hello From HealthTech! \n")
     model_start_prediction_time = time.perf_counter()
-    result = ocr.readtext(img)
+    # Same tuned readtext() params as read_text_from_image() above, reused
+    # from liveOCR.py's OCRWorker (avoids re-deriving/drifting these values).
+    result = ocr.readtext(img, **TUNED_READTEXT_KWARGS)
     model_prediction_time = time.perf_counter()
     
     for (bbox, text, prob) in result:

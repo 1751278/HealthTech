@@ -34,3 +34,13 @@ members = [
     "orbSlam3/orb-slam",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: real EasyOCR inference, needs cached model weights (~/.EasyOCR/model), no network required if cached but slower",
+]
+

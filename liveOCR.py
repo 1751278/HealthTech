@@ -21,10 +21,24 @@ import threading
 import cv2
 import easyocr
 import torch
- 
+from ocr_device import resolve_ocr_reader_kwargs, TUNED_READTEXT_KWARGS
+
 print(f"CUDA Available: {torch.cuda.is_available()}")  # just checking the GPU shows up
- 
- 
+
+# Submit every Nth frame to the OCR worker instead of every frame. OCR is the
+# slow part, so this avoids starving the worker / wasting cvtColor+CLAHE work
+# on frames that would just get dropped anyway while OCR is still busy.
+OCR_FRAME_INTERVAL = 3
+
+
+def should_submit_frame(frame_idx: int, interval: int = OCR_FRAME_INTERVAL) -> bool:
+    """Return True if this frame index should be sent to the OCR worker.
+
+    Pure/stateless so it can be unit tested without a camera or GUI window.
+    """
+    return frame_idx % interval == 0
+
+
 class OCRWorker:
     """
     This handles the OCR part on a separate thread, so it doesn't freeze
@@ -62,15 +76,15 @@ class OCRWorker:
                 time.sleep(0.005)  # nothing to do yet, chill for a bit
                 continue
  
-            # This is the slow part — actually finding + reading the text
+            # This is the slow part — actually finding + reading the text.
+            # batch_size/workers are live-stream-specific (not shared with
+            # OCR.py's single-image calls), so they stay as explicit kwargs
+            # alongside the shared tuned params.
             preds = self.reader.readtext(
                 frame,
-                decoder="greedy",
-                canvas_size=640,
-                mag_ratio=1.5,
+                **TUNED_READTEXT_KWARGS,
                 batch_size=4,
                 workers=0,
-                link_threshold=0.5,   # lower = less likely to chop words into pieces
             )
  
             # toss out low-confidence junk before saving the results
@@ -90,8 +104,9 @@ def main():
     print("Hello From HealthTech! \n")
  
     # gpu=True means use the graphics card. quantize is a CPU-only speed
-    # trick, so we turn it off here since we're already using the GPU.
-    ocr = easyocr.Reader(['en'], gpu=True, quantize=False)
+    # trick, so it's only enabled if we actually resolve to running on CPU.
+    _reader_kwargs = resolve_ocr_reader_kwargs()
+    ocr = easyocr.Reader(['en'], gpu=_reader_kwargs["gpu"], quantize=_reader_kwargs["quantize"])
     worker = OCRWorker(ocr, thresh=0.35)  # how confident it needs to be before we show a result
  
     cap = cv2.VideoCapture(1)  # Change to 0 if this doesn't find the right camera
@@ -131,10 +146,10 @@ def main():
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         gray = clahe.apply(gray)
  
-        # Only send every 3rd frame over to OCR. OCR is the slow part,
-        # so this keeps the video itself running smooth while OCR still
-        # gets updated often enough to feel live.
-        if frame_idx % 1 == 0:
+        # Only send every 3rd frame over to OCR (see OCR_FRAME_INTERVAL).
+        # OCR is the slow part, so this keeps the video itself running
+        # smooth while OCR still gets updated often enough to feel live.
+        if should_submit_frame(frame_idx):
             worker.submit(gray)
         frame_idx += 1
  
