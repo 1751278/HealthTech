@@ -122,6 +122,7 @@ def main():
     old_frame = None
     while True:
         #Don't wait for reply
+        print("YO")
         if sock.poll(timeout=100):
             md = sock.recv_json(zmq.RCVMORE if False else 0)
             msg = sock.recv(copy=False)
