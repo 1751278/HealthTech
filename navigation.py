@@ -56,7 +56,7 @@ DEPTH_OUT_CHANNELS = [48, 96, 192, 384]
 
 # --- VO ---
 VO_venv = os.path.abspath("./orb-slam/.venv/Scripts/python.exe")
-VO_script = os.path.abspath("./orb-slam/monocular_vo.py")
+VO_script = os.path.abspath("./orb-slam/run_vo.py")
 
 result = subprocess.run(
     [VO_venv, VO_script],
@@ -497,7 +497,7 @@ def navigate():
     # Note: If Camo studio is not open, you may need to change source to (source - 1)
     cap = cv2.VideoCapture(source)
     if not cap.isOpened():
-        print("Camo Studio not detected, trying default camera...")
+        print("Camo Studio not detected, trying default camera... (" + str(source - 1) + ")")
         cap = cv2.VideoCapture(source - 1)
         if not cap.isOpened():
             print("Error: Could not open video source.")
@@ -540,7 +540,11 @@ def navigate():
         # Resize the depth frame
         frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT)) 
         h, w  = frame.shape[:2]
- 
+
+        md = dict(shape=frame.shape, dtype=str(frame.dtype))
+        sock.send_json(md, zmq.SNDMORE)
+        sock.send(frame, copy=False)
+
         # --- Depth estimation ---
         if frame_num % args.depth_interval == 0:
             # Disable Depth Anything inference
@@ -691,7 +695,12 @@ def navigate():
         # display camera frame and depth side by side
         out = np.hstack([frame, depth_color]) if depth_color is not None else frame
         cv2.imshow('navigator', out)
- 
+
+
+        #Don't wait for reply
+        if sock.poll(timeout=0):
+            md2 = sock.recv_json(zmq.SNDMORE if False else 0)
+
         # Exit on 'q' key press
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break

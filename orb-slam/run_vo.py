@@ -117,8 +117,38 @@ def main():
 
     reader = fr(args.source)
     vo = vo(K, n_features=args.n_features)
-
     FRAME_WINDOW = 1
+    frame_count = 0
+    old_frame = None
+    while True:
+        #Don't wait for reply
+        if sock.poll(timeout=100):
+            md = sock.recv_json(zmq.RCVMORE if False else 0)
+            msg = sock.recv(copy=False)
+            frame = np.frombuffer(msg, dtype=md["dtype"]).reshape(md["shape"])
+
+            if frame is None:
+                break
+            frame = cv2.resize(frame, (int(720*RES_SCALE), int(1280*RES_SCALE)))  # Resize for faster processing
+            if frame_count % FRAME_WINDOW == 0:
+                kp, matches = vo.process_frame(frame, frame_count, scale=args.scale)
+                traj_canvas = draw_trajectory_canvas(vo.trajectory)
+
+            frame_count += 1
+
+            if not args.no_display:
+                vis = cv2.drawKeypoints(frame, kp, None, color=(0, 255, 0), flags=0)
+                cv2.putText(vis, f"frame {frame_count} | keypoints {len(kp)}",
+                            (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2)
+                cv2.putText(vis, f"matches {len(matches)} "
+                                    f"| inliers {vo.num_inlier_matches}",
+                            (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2)
+                vis = cv2.resize(vis, (360, 640))  # Resize for display window
+                cv2.imshow("Monocular VO - Frame", vis)
+
+                cv2.imshow("Monocular VO - Trajectory", traj_canvas)
+        
+
 
 
 
