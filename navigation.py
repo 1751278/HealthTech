@@ -28,7 +28,12 @@ import sounddevice as sd
 import math
 import tensorflow as tf
 
+import zmq
 
+
+ctx = zmq.Context()
+sock = ctx.socket(zmq.PAIR)
+sock.bind("tcp://127.0.0.1:5555")
 
 sys.path.append('./Depth-Anything-V2')
 import os

@@ -27,6 +27,7 @@ dependencies = [
     "numpy>=2.4.4",
     "dotenv>=0.9.9",
     "google-genai>=2.14.0",
+    "pyzmq>=27.2.0",
 ]
 
 [tool.uv.workspace]
