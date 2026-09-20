@@ -22,6 +22,7 @@ import matplotlib
 import soundfile as sf
 import sounddevice as sd
 import math
+import zmq
 
 
 
@@ -45,6 +46,16 @@ DEPTH_OUT_CHANNELS = [48, 96, 192, 384]
 # --- VO ---
 VO_venv = os.path.abspath("./orb-slam/.venv/Scripts/python.exe")
 VO_script = os.path.abspath("./orb-slam/monocular_vo.py")
+VO_ZMQ_ADDRESS = "tcp://localhost:5555"  # TODO: confirm this matches the bind address VO's publisher uses
+# ETHAN EDIT 
+vo_context = zmq.Context()
+vo_socket = vo_context.socket(zmq.SUB)
+vo_socket.connect(VO_ZMQ_ADDRESS)
+vo_socket.setsockopt_string(zmq.SUBSCRIBE, "")
+
+# Holds the most recently received trajectory from VO. Starts empty until the
+# first message comes in — navigate() should tolerate this being None.
+latest_vo_trajectory = None
 
 result = subprocess.run(
     [VO_venv, VO_script],
@@ -496,6 +507,16 @@ def navigate():
             direction = max(-90, min(90, direction))  # clamp to [-90, 90]
 
        
+        try:
+            raw = vo_socket.recv(flags=zmq.NOBLOCK)
+            # TODO: replace this once VO's actual wire format is finalized.
+            # Likely candidates depending on how VO serializes vo.trajectory:
+            #   - pickle:        latest_vo_trajectory = pickle.loads(raw)
+            #   - raw float64s:  latest_vo_trajectory = np.frombuffer(raw, dtype=np.float64).reshape(-1, 3)
+            #   - msgpack/json:  latest_vo_trajectory = msgpack.unpackb(raw)
+            latest_vo_trajectory = raw  # placeholder: just stash the bytes for now
+        except zmq.Again:
+            pass  # no new trajectory data this frame — keep using the last o
         
         if direction > 0:
             audio_state["left_vol"] = 0.0
