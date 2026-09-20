@@ -1,3 +1,14 @@
+#################
+# navigation.py
+# Created by Ethan September 17 2026
+# Last Updated: September 20 2026 by Ethan
+# Last Change:
+# - Initiated merger between VO and navigation.
+# Description: This module captures video from a camera, runs depth estimation and tells the user to navigate to the door.
+# TODO:
+# - Nothing really, should be done, the output of this file should be used in navigation.py
+#################
+
 import argparse
 import glob
 import os
@@ -12,16 +23,33 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import re
-from monocular_vo import FrameReader as fr
-from monocular_vo import MonocularVO as vo
+from monocular_vo import FrameReader as fr #Change this with any vo class provided it has the same methods (Ex: IMU)
+from monocular_vo import MonocularVO as voclass #Change this with any vo class provided it has the same methods (Ex: IMU)
 from accelerated_features.modules.xfeat import XFeat
 
 
 import numpy as np
 
+ip_address = "127.0.0.1"
+port1 = "5555"
+port2 = "5556"
+
 ctx = zmq.Context()
-sock = ctx.socket(zmq.PAIR)
-sock.connect("tcp://127.0.0.1:5555")
+
+# --- RECIEVER --- #
+reciever = ctx.socket(zmq.PULL)
+reciever.setsockopt(zmq.CONFLATE, 1)
+reciever.connect(f"tcp://{ip_address}:{port1}")
+
+# --- SENDER --- #
+sender = ctx.socket(zmq.PUB)
+sender.bind(f"tcp://{ip_address}:{port2}")
+
+print("Server ready... on ports: ", port1, " and ", port2)
+
+FRAME_WINDOW = 1  # Process every Nth frame for VO
+SEND_INTERVAL = 30  # Send trajectory every N frames
+
 
 try:
     from python_orb_slam3 import ORBExtractor
@@ -91,7 +119,7 @@ with open(CALIBRATION_PATH, "r") as file:
         pattern = r'[-+]?\d*\.\d+|\d+'
         if re.findall(pattern, line):
             CALIBRATION_VALS.append(float(re.findall(pattern, line)[0]))
-print(CALIBRATION_VALS)
+
 
 
 def main():
@@ -116,41 +144,47 @@ def main():
     print("Camera intrinsics K:\n", K)
 
     reader = fr(args.source)
-    vo = vo(K, n_features=args.n_features)
-    FRAME_WINDOW = 1
+    vo = voclass(K, n_features=args.n_features)
+    
     frame_count = 0
     old_frame = None
     while True:
-        #Don't wait for reply
         print("YO")
-        if sock.poll(timeout=100):
-            md = sock.recv_json(zmq.RCVMORE if False else 0)
-            msg = sock.recv(copy=False)
-            frame = np.frombuffer(msg, dtype=md["dtype"]).reshape(md["shape"])
-
-            if frame is None:
-                break
-            frame = cv2.resize(frame, (int(720*RES_SCALE), int(1280*RES_SCALE)))  # Resize for faster processing
-            if frame_count % FRAME_WINDOW == 0:
-                kp, matches = vo.process_frame(frame, frame_count, scale=args.scale)
-                traj_canvas = draw_trajectory_canvas(vo.trajectory)
-
-            frame_count += 1
-
-            if not args.no_display:
-                vis = cv2.drawKeypoints(frame, kp, None, color=(0, 255, 0), flags=0)
-                cv2.putText(vis, f"frame {frame_count} | keypoints {len(kp)}",
-                            (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2)
-                cv2.putText(vis, f"matches {len(matches)} "
-                                    f"| inliers {vo.num_inlier_matches}",
-                            (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2)
-                vis = cv2.resize(vis, (360, 640))  # Resize for display window
-                cv2.imshow("Monocular VO - Frame", vis)
-
-                cv2.imshow("Monocular VO - Trajectory", traj_canvas)
         
+        frame_bytes = reciever.recv()
 
 
+        
+        np_array = np.frombuffer(frame_bytes, dtype=np.uint8)
+        frame = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
+
+        if frame is None:
+            break
+        
+        frame = cv2.resize(frame, (int(720*RES_SCALE), int(1280*RES_SCALE)))  # Resize for faster processing
+        if frame_count % FRAME_WINDOW == 0:
+            kp, matches = vo.process_frame(frame, frame_count, scale=args.scale)
+            traj_canvas = draw_trajectory_canvas(vo.trajectory)
+            if frame_count % SEND_INTERVAL == 0:
+                # Send the trajectory canvas to the client
+                sender.send(vo.trajectory.tobytes())
+                print("Sent!")
+
+        frame_count += 1
+
+        if not args.no_display:
+ 
+
+            cv2.imshow("Monocular VO - Trajectory", traj_canvas)
+            key = cv2.waitKey(1) & 0xFF
+            if key == 27:  # ESC
+                print("ESC pressed, stopping.")
+                break
+    cv2.destroyAllWindows()
+    print(f"Total frames processed: {frame_count}")
+    print(f"Trajectory points: {len(vo.trajectory)}")
+    save_matplotlib_plot(vo.trajectory, out_path=args.out)
 
 
-    
+if __name__ == "__main__":
+    main()
