@@ -82,7 +82,7 @@ result = subprocess.Popen(
 print(result)
 
 # --- Capture ---
-DEFAULT_SOURCE   = '1'    # Camera index or file path
+DEFAULT_SOURCE   = '0'    # Camera index or file path
 FRAME_WIDTH      = 360
 FRAME_HEIGHT     = 640
 DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
@@ -556,7 +556,9 @@ def navigate():
     """
     while True:
         ret, frame = cap.read()
+        
         if not ret:  # end of video file or camera error
+            print("Error: Could not read frame from video source.")
             exit_reason = "stream_ended"
             break
         
@@ -565,15 +567,18 @@ def navigate():
         h, w  = frame.shape[:2]
 
         md = dict(shape=frame.shape, dtype=str(frame.dtype))
-
         encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        
         if encoded:
+            
             sender.send(buffer.tobytes())
         #Check for feedback
         socks = dict(poller.poll(timeout=0))
-        if socks.get(receiver) == zmq.POLLIN:
+        if socks.get(receiver):
             feedback_msg = receiver.recv_string()
             print(f"Received feedback from server: {feedback_msg}")
+        else:
+            print(socks.get(receiver))
         # --- Depth estimation ---
         if frame_num % args.depth_interval == 0:
             # Disable Depth Anything inference

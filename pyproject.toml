@@ -28,6 +28,7 @@ dependencies = [
     "dotenv>=0.9.9",
     "google-genai>=2.14.0",
     "pyzmq>=27.2.0",
+    "zmq>=0.0.0",
 ]
 
 [tool.uv.workspace]
