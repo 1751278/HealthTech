@@ -30,11 +30,26 @@ import tensorflow as tf
 
 import zmq
 
+ip_address = "127.0.0.1"
+port1 = "5555"
+port2 = "5556"
+
+
+
 
 ctx = zmq.Context()
-sock = ctx.socket(zmq.PAIR)
-sock.bind("tcp://127.0.0.1:5555")
 
+# --- SENDER ---
+sender = ctx.socket(zmq.PUSH)
+sender.setsockopt(zmq.CONFLATE, 1) 
+sender.bind(f"tcp://{ip_address}:{port1}")
+print("Sender ready... on port: ", port1)
+# --- Receiver ---
+receiver = ctx.socket(zmq.SUB)
+receiver.connect(f"tcp://{ip_address}:{port2}") # Change to Server IP later
+receiver.setsockopt_string(zmq.SUBSCRIBE, "") # Subscribe to all messages
+
+print("Receiver ready... on port: ", port2)
 sys.path.append('./Depth-Anything-V2')
 import os
 
@@ -57,11 +72,10 @@ DEPTH_OUT_CHANNELS = [48, 96, 192, 384]
 # --- VO ---
 VO_venv = os.path.abspath("./orb-slam/.venv/Scripts/python.exe")
 VO_script = os.path.abspath("./orb-slam/run_vo.py")
-
-result = subprocess.run(
+result = subprocess.Popen(
     [VO_venv, VO_script],
     cwd=os.path.dirname(VO_script), #Make the cwd the same as the script so it can find the calibration data
-    capture_output=True, 
+    stdout=subprocess.DEVNULL,
     text=True
 )
 
@@ -169,6 +183,15 @@ direction_smoothen = np.array([0.05, 0.05, 0.1, 0.1, 0.7])
 # SETUP AND MODEL LOADING
 # =============================================================================
  
+
+
+poller = zmq.Poller()
+poller.register(receiver, zmq.POLLIN)
+
+
+print("Streaming video... Listening for feedback on port 5556.")
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--source',         default=DEFAULT_SOURCE)
 parser.add_argument('--yolo-door-interval',  type=int, default=DOOR_YOLO_INTERVAL)
@@ -542,9 +565,15 @@ def navigate():
         h, w  = frame.shape[:2]
 
         md = dict(shape=frame.shape, dtype=str(frame.dtype))
-        sock.send_json(md, zmq.SNDMORE)
-        sock.send(frame, copy=False)
 
+        encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        if encoded:
+            sender.send(buffer.tobytes())
+        #Check for feedback
+        socks = dict(poller.poll(timeout=0))
+        if socks.get(receiver) == zmq.POLLIN:
+            feedback_msg = receiver.recv_string()
+            print(f"Received feedback from server: {feedback_msg}")
         # --- Depth estimation ---
         if frame_num % args.depth_interval == 0:
             # Disable Depth Anything inference
@@ -697,9 +726,7 @@ def navigate():
         cv2.imshow('navigator', out)
 
 
-        #Don't wait for reply
-        if sock.poll(timeout=0):
-            md2 = sock.recv_json(zmq.SNDMORE if False else 0)
+
 
         # Exit on 'q' key press
         if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -711,8 +738,7 @@ def navigate():
     # Cleanup
     cap.release()
     cv2.destroyAllWindows()
-    vo_socket.close()      # NEW
-    vo_context.term()      # NEW
+
     return {"frames_processed": frame_num, "exit_reason": exit_reason}
  
 # calling the function

@@ -42,8 +42,17 @@ reciever.setsockopt(zmq.CONFLATE, 1)
 reciever.connect(f"tcp://{ip_address}:{port1}")
 
 # --- SENDER --- #
-sender = ctx.socket(zmq.PUB)
-sender.bind(f"tcp://{ip_address}:{port2}")
+# Using a try/finally block ensures ports are freed if the script crashes
+try:
+    sender = ctx.socket(zmq.PUB)
+    sender.bind(f"tcp://{ip_address}:{port2}")
+    
+    # ... your main ORB-SLAM processing loop ...
+    
+finally:
+    # This always runs on exit or crash to release the port instantly
+    sender.close()
+    ctx.term()
 
 print("Server ready... on ports: ", port1, " and ", port2)
 
