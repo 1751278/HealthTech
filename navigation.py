@@ -711,7 +711,8 @@ def navigate():
     # Cleanup
     cap.release()
     cv2.destroyAllWindows()
-
+    vo_socket.close()      # NEW
+    vo_context.term()      # NEW
     return {"frames_processed": frame_num, "exit_reason": exit_reason}
  
 # calling the function
