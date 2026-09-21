@@ -161,6 +161,8 @@ def main():
  
 
             cv2.imshow("Monocular VO - Trajectory", traj_canvas)
+
+            #Probably remove this, replace it with some sort of signal from the navigation.py script to stop this.
             key = cv2.waitKey(1) & 0xFF
             if key == 27:  # ESC
                 print("ESC pressed, stopping.")
