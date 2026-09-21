@@ -73,13 +73,14 @@ DEPTH_OUT_CHANNELS = [48, 96, 192, 384]
 VO_venv = os.path.abspath("./orb-slam/.venv/Scripts/python.exe")
 VO_script = os.path.abspath("./orb-slam/run_vo.py")
 result = subprocess.Popen(
-    [VO_venv, VO_script],
+    [VO_venv, "-u", VO_script],
     cwd=os.path.dirname(VO_script), #Make the cwd the same as the script so it can find the calibration data
-    stdout=subprocess.DEVNULL,
+    #stdout=subprocess.PIPE, #As far as I understand, this is for prints
+    #stderr=subprocess.PIPE, #This is for errors
     text=True
 )
 
-print(result)
+
 
 # --- Capture ---
 DEFAULT_SOURCE   = '0'    # Camera index or file path
@@ -182,7 +183,7 @@ direction_smoothen = np.array([0.05, 0.05, 0.1, 0.1, 0.7])
 # =============================================================================
 # SETUP AND MODEL LOADING
 # =============================================================================
- 
+
 
 
 poller = zmq.Poller()
@@ -574,11 +575,16 @@ def navigate():
             sender.send(buffer.tobytes())
         #Check for feedback
         socks = dict(poller.poll(timeout=0))
-        if socks.get(receiver):
-            feedback_msg = receiver.recv_string()
-            print(f"Received feedback from server: {feedback_msg}")
-        else:
-            print(socks.get(receiver))
+        if socks.get(receiver): #Probably working
+            feedback_msg = receiver.recv()
+
+            trajectory = np.frombuffer( #Reconstruct back to a shape of (N, 3, 1) where N is the number of frames in the trajectory
+                feedback_msg,
+                dtype=np.float64
+            ).reshape(-1, 3, 1)
+
+            print("Received trajectory:", trajectory.shape)
+
         # --- Depth estimation ---
         if frame_num % args.depth_interval == 0:
             # Disable Depth Anything inference
@@ -672,7 +678,7 @@ def navigate():
         else:
             door_direction = door_state["last_door_direction"]  # keep going toward the last known door direction if we lose sight of it
             max_conf = door_state["last_door_confidence"]*math.exp(-0.01*(frame_num - door_state["last_seen_frame"])) #If we don't see a door, use the last known confidence to determine how much to trust the last known direction
-            print(max_conf, " On frame: ", frame_num - door_state["last_seen_frame"], " Orignial confidence: ", door_state["last_door_confidence"])
+            #print(max_conf, " On frame: ", frame_num - door_state["last_seen_frame"], " Orignial confidence: ", door_state["last_door_confidence"])
             
         # -- Object Detection using yolo26 for desk and chair avoidance. WIP --
         #"""
@@ -690,9 +696,9 @@ def navigate():
                 cv2.putText(frame, label, (x1, y1 - 5),cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)  # draw label
         #"""
         # get steer with obect detection
-        print(direction)
+
         direction = get_steer_from_objects(boxes26, depth_uint8, direction)
-        print(direction)
+
         #Call combine steer and use what we have currently to determine the final direction
         
 

@@ -30,35 +30,6 @@ from accelerated_features.modules.xfeat import XFeat
 
 import numpy as np
 
-ip_address = "127.0.0.1"
-port1 = "5555"
-port2 = "5556"
-
-ctx = zmq.Context()
-
-# --- RECIEVER --- #
-reciever = ctx.socket(zmq.PULL)
-reciever.setsockopt(zmq.CONFLATE, 1)
-reciever.connect(f"tcp://{ip_address}:{port1}")
-
-# --- SENDER --- #
-# Using a try/finally block ensures ports are freed if the script crashes
-try:
-    sender = ctx.socket(zmq.PUB)
-    sender.bind(f"tcp://{ip_address}:{port2}")
-    
-    # ... your main ORB-SLAM processing loop ...
-    
-finally:
-    # This always runs on exit or crash to release the port instantly
-    sender.close()
-    ctx.term()
-
-print("Server ready... on ports: ", port1, " and ", port2)
-
-FRAME_WINDOW = 1  # Process every Nth frame for VO
-SEND_INTERVAL = 30  # Send trajectory every N frames
-
 
 try:
     from python_orb_slam3 import ORBExtractor
@@ -130,7 +101,8 @@ with open(CALIBRATION_PATH, "r") as file:
             CALIBRATION_VALS.append(float(re.findall(pattern, line)[0]))
 
 
-
+FRAME_WINDOW = 1  # Process every Nth frame for VO
+SEND_INTERVAL = 30  # Send trajectory every N frames
 def main():
     parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
     parser.add_argument("--source", default="vo_videos/vid1.mp4",
@@ -158,10 +130,8 @@ def main():
     frame_count = 0
     old_frame = None
     while True:
-        print("YO")
         
         frame_bytes = reciever.recv()
-
 
         
         np_array = np.frombuffer(frame_bytes, dtype=np.uint8)
@@ -173,14 +143,20 @@ def main():
         frame = cv2.resize(frame, (int(720*RES_SCALE), int(1280*RES_SCALE)))  # Resize for faster processing
         if frame_count % FRAME_WINDOW == 0:
             kp, matches = vo.process_frame(frame, frame_count, scale=args.scale)
+            
             traj_canvas = draw_trajectory_canvas(vo.trajectory)
+            
             if frame_count % SEND_INTERVAL == 0:
-                # Send the trajectory canvas to the client
-                sender.send(vo.trajectory.tobytes())
-                print("Sent!")
+                print("ABOUT TO SEND", flush=True)
 
+                trajectory_data = np.array(vo.trajectory, dtype=np.float64) #Convert to numpy array for sending
+
+                print(f"Trajectory shape: {trajectory_data.shape}, "f"dtype: {trajectory_data.dtype}, "f"bytes: {trajectory_data.nbytes}",flush=True)
+
+                sender.send(trajectory_data.tobytes())
+
+                print("SENT TRAJECTORY", flush=True)
         frame_count += 1
-
         if not args.no_display:
  
 
@@ -194,6 +170,29 @@ def main():
     print(f"Trajectory points: {len(vo.trajectory)}")
     save_matplotlib_plot(vo.trajectory, out_path=args.out)
 
+ip_address = "127.0.0.1"
+port1 = "5555"
+port2 = "5556"
 
-if __name__ == "__main__":
+ctx = zmq.Context()
+
+# --- RECIEVER --- #
+reciever = ctx.socket(zmq.PULL)
+reciever.setsockopt(zmq.CONFLATE, 1)
+reciever.connect(f"tcp://{ip_address}:{port1}")
+
+# --- SENDER --- #
+try:
+    sender = ctx.socket(zmq.PUB)
+    sender.bind(f"tcp://{ip_address}:{port2}")
+    print("Server ready... on ports: ", port1, " and ", port2)
+
+
     main()
+finally:
+    # This always runs on exit or crash to release the port instantly
+    sender.close()
+    ctx.term()
+
+
+

@@ -30,7 +30,10 @@ dependencies = [
     "pyzmq>=27.2.0",
     "zmq>=0.0.0",
 ]
-
+[tool.uv]
+exclude-dependencies = [
+    "opencv-python-headless",
+]
 [tool.uv.workspace]
 members = [
     "orbSlam3/orb-slam",
