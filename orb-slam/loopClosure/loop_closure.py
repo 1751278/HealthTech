@@ -378,7 +378,7 @@ class LoopClosure:
             rotation = np.degrees(np.arccos(value))  # Rotation in degrees
 
             #if translation > 0.6 and rotation > 15:
-            if frame_count % 15 == 0:
+            if frame_count % 10 == 0:
                 print("Keyframe created: ", self.next_keyframe_id, " translation: ", translation, " rotation: ", int(rotation))
                 self._create_keyframe(frame_count, kp_full, feats_full, orb_kp, orb_des)
                 candidates = self._process_keyframes()

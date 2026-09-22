@@ -369,7 +369,7 @@ def save_matplotlib_plot(trajectory, out_path="trajectory.png"):
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
-CALIBRATION_PATH = "cameraCalibrationData/calibrationMetrics/kenshi.txt"
+CALIBRATION_PATH = "cameraCalibrationData/calibrationMetrics/ethan.txt"
 CALIBRATION_VALS = []
 RES_SCALE = 1/2.0
 with open(CALIBRATION_PATH, "r") as file:
@@ -382,13 +382,13 @@ print(CALIBRATION_VALS)
 
 def main():
     parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
-    parser.add_argument("--source", default="vo_videos/vid1.mp4",
+    parser.add_argument("--source", default="1",
                          help="Webcam index (e.g. 0), path to a video file, or path to a folder of image frames")
     parser.add_argument("--fx", type=float, default=CALIBRATION_VALS[0]*RES_SCALE, help="Focal length x (pixels)")
     parser.add_argument("--fy", type=float, default=CALIBRATION_VALS[1]*RES_SCALE, help="Focal length y (pixels)")
     parser.add_argument("--cx", type=float, default=CALIBRATION_VALS[2]*RES_SCALE, help="Principal point x")
     parser.add_argument("--cy", type=float, default=CALIBRATION_VALS[3]*RES_SCALE, help="Principal point y")
-    parser.add_argument("--scale", type=float, default=1.0,
+    parser.add_argument("--scale", type=float, default=0.7,
                          help="Per-frame translation scale factor. Monocular VO has no absolute "
                               "scale; supply this from external info (e.g. constant speed * dt) "
                               "or leave at 1.0 for a scale-free trajectory shape.")

@@ -177,7 +177,7 @@ def main():
             fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
             color=(0, 0, 255), thickness=2
         )
- 
+        frame = cv2.resize(frame, (360, 640))  # make sure the window isn't too big for the screen
         cv2.imshow("Live text detection", frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             print("'q' key pressed. Stopping application.")

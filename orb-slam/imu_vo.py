@@ -14,6 +14,7 @@ import torch
 import serial
 import time
 from scipy.spatial.transform import Rotation as Rot
+from loopClosure.loop_closure import LoopClosure as lc
 
 try:
     from python_orb_slam3 import ORBExtractor
@@ -93,7 +94,7 @@ def IMU_READER(main_thread):
             if ser.in_waiting > 0:
                 raw_data = ser.readline()
                 decoded_data = raw_data.decode('utf-8', errors='ignore').strip()
-                print(decoded_data)
+                #print(decoded_data)
                 split_data = decoded_data.split("/")
 
                 with imu_lock:
@@ -167,6 +168,8 @@ class MonocularVO:
         # unless an external scale is supplied every frame)
         self.trajectory = [self.cur_t.copy()]
         self.num_inlier_matches = 0
+
+        self.lc = lc(self._match,self.K,"orb", self.device)
 
     @staticmethod
     def to_gray(frame):
@@ -260,7 +263,40 @@ class MonocularVO:
         # constructing cv2.DMatch objects.
         return np.stack([idx0, idx1], axis=1)
     
-    def process_frame(self, frame, scale=1.0):
+    def _convert_cv2_to_xfeat(self, cv_kpts, cv_descs, device="cpu"):
+        """
+        Converts OpenCV keypoints and descriptors to the XFeat dictionary format.
+        """
+        if not cv_kpts or cv_descs is None or len(cv_kpts) == 0:
+            return {
+                "keypoints": torch.empty((0, 2), dtype=torch.float32, device=device),
+                "scores": torch.empty((0,), dtype=torch.float32, device=device),
+                "descriptors": torch.empty((0, cv_descs.shape[1] if cv_descs is not None else 64), dtype=torch.float32, device=device)
+            }
+
+        # 1. Extract (x, y) coordinates from cv2.KeyPoint objects
+        kpts_list = [kp.pt for kp in cv_kpts]
+        xfeat_kpts = torch.tensor(kpts_list, dtype=torch.float32, device=device)
+
+        # 2. Extract responses/scores from cv2.KeyPoint objects
+        scores_list = [kp.response for kp in cv_kpts]
+        xfeat_scores = torch.tensor(scores_list, dtype=torch.float32, device=device)
+
+        # 3. Convert descriptors NumPy array to PyTorch Tensor
+        # Ensure descriptors are float32 (ORB might be uint8, convert if needed)
+        if cv_descs.dtype == np.uint8:
+            cv_descs = cv_descs.astype(np.float32)
+            
+        xfeat_descs = torch.from_numpy(cv_descs).to(device=device, dtype=torch.float32)
+
+        # Return the exact dictionary structure XFeat creates
+        return {
+            "keypoints": xfeat_kpts,      # Shape: (N, 2)
+            "scores": xfeat_scores,        # Shape: (N,)
+            "descriptors": xfeat_descs     # Shape: (N, D)
+            }
+    
+    def process_frame(self, frame, frame_count, scale=1.0):
         """
         Processes one frame, updates the accumulated pose, and returns
         (kp, matches) for visualization purposes.
@@ -268,6 +304,13 @@ class MonocularVO:
         
         gray = self.to_gray(frame)
         kp, des = self._detect(gray)
+
+        xFeat_format = self._convert_cv2_to_xfeat(kp, des)
+        kp_full = xFeat_format['keypoints'].cpu().numpy()
+        feats_full = xFeat_format['descriptors'].cpu().numpy()
+
+        feats = feats_full[: self.n_features]
+        kp_np = kp_full[: self.n_features]
 
         if self.prev_gray is None:
             self.prev_gray, self.prev_kp, self.prev_des = gray, kp, des
@@ -305,6 +348,17 @@ class MonocularVO:
             self.cur_R = self._convert_to_R(self.imu_angle)# from imu
             self.trajectory.append(self.cur_t.copy())
 
+        # Record the pose on every frame, including frames where the pose
+        # update was rejected. This keeps trajectory length 1:1 with frames.
+        self.trajectory.append(self.cur_t.copy())
+
+        traj = self.lc.process_loop_check(self.cur_R, self.cur_t, frame_count, kp_full, feats_full, kp, des, self.trajectory)
+
+        if traj:
+            self.trajectory = traj
+            self.cur_R = self.lc.cur_R
+            self.cur_t = self.lc.cur_t
+            
         self.prev_gray, self.prev_kp, self.prev_des = gray, kp, des
         return kp, matches
 
@@ -368,7 +422,7 @@ with open(CALIBRATION_PATH, "r") as file:
 print(CALIBRATION_VALS)
 
 parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
-parser.add_argument("--source", default="1",
+parser.add_argument("--source", default="vo_videos/vid1.mp4",
                         help="Webcam index (e.g. 0), path to a video file, or path to a folder of image frames")
 parser.add_argument("--fx", type=float, default=CALIBRATION_VALS[0]/2.0, help="Focal length x (pixels)")
 parser.add_argument("--fy", type=float, default=CALIBRATION_VALS[1]/2.0, help="Focal length y (pixels)")
@@ -416,7 +470,7 @@ def main_loop():
                 break
             frame = cv2.resize(frame, (int(720*1/2.0), int(1280*1/2.0)))  # Resize for faster processing
             if frame_count % FRAME_WINDOW == 0:
-                kp, matches = vo.process_frame(frame, scale=args.scale)
+                kp, matches = vo.process_frame(frame, frame_count, scale=args.scale)
                 traj_canvas = draw_trajectory_canvas(vo.trajectory)
             frame_count += 1
 
