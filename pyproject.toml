@@ -9,7 +9,6 @@ dependencies = [
     "tensorflow>=2.20.0",
     "requests>=2.31.0",
     "ultralytics>=8.4.26",
-    "opencv-python<=4.11.0.86",
     "matplotlib>=3.10.9",
     "soundfile>=0.13.1",
     "sounddevice>=0.5.5",
@@ -29,6 +28,7 @@ dependencies = [
     "google-genai>=2.14.0",
     "pyzmq>=27.2.0",
     "zmq>=0.0.0",
+    "opencv-python>=4.11.0.86",
 ]
 [tool.uv]
 exclude-dependencies = [

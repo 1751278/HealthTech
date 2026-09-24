@@ -194,6 +194,7 @@ try:
 finally:
     # This always runs on exit or crash to release the port instantly
     sender.close()
+    reciever.close()
     ctx.term()
 
 
