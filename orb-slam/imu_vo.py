@@ -135,7 +135,7 @@ class MonocularVO:
         while imu_connected == False:
             with is_connected_lock:
                 imu_connected = is_connected_imu
-        time.sleep(0.1)
+        time.sleep(1)
 
         # consistently use the same CPU/GPU device.
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
