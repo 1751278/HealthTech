@@ -76,7 +76,7 @@ imu_lock = threading.Lock()
 is_connected_imu = False
 is_connected_lock = threading.Lock()
 
-def IMU_READER(main_thread):
+def IMU_READER(stop_signal):
     COM_PORT = 'COM17' # COM17 for KENSHI, COM3 for SAHIR
     BAUD_RATE = 115200
 
@@ -86,7 +86,7 @@ def IMU_READER(main_thread):
     try:
         # Open the serial port connection
         ser = serial.Serial(COM_PORT, BAUD_RATE, timeout=1)
-        time.sleep(2) # Allow connection to settle
+        time.sleep(1) # Allow connection to settle
         print("Connected successfully! Listening for data...")
         # read data from serial port to buffer any data that is corrupt
         for _ in range(10):
@@ -110,7 +110,7 @@ def IMU_READER(main_thread):
 
                 with imu_lock:
                     imu_data = [float(split_data[0]), float(split_data[1]), float(split_data[2])]
-            if main_thread.is_alive() is not True:
+            if stop_signal.is_set():
                 break
     except serial.SerialException as e:
         print(f"Error connecting to serial port: {e}")
@@ -127,6 +127,11 @@ def IMU_READER(main_thread):
 # --------------------------------------------------------------------------- #
 class MonocularVO:
     def __init__(self, K, n_features=3000, min_matches=8, ratio=0.75):
+        self.stop_signal = threading.Event()
+        self.imu_thread = threading.Thread(target=IMU_READER, args=(self.stop_signal,))
+        self.imu_thread.start()
+        time.sleep(5)  # Allow IMU thread to initialize and connect
+
         # consistently use the same CPU/GPU device.
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -167,6 +172,11 @@ class MonocularVO:
         # unless an external scale is supplied every frame)
         self.trajectory = [self.cur_t.copy()]
         self.num_inlier_matches = 0
+
+    def _end_imu_thread(self):
+        """Signal the IMU thread to stop and wait for it to finish."""
+        self.stop_signal.set()
+        self.imu_thread.join()
 
     @staticmethod
     def to_gray(frame):
@@ -368,7 +378,7 @@ with open(CALIBRATION_PATH, "r") as file:
 print(CALIBRATION_VALS)
 
 parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
-parser.add_argument("--source", default="1",
+parser.add_argument("--source", default="vo_videos/vid2.mp4",
                         help="Webcam index (e.g. 0), path to a video file, or path to a folder of image frames")
 parser.add_argument("--fx", type=float, default=CALIBRATION_VALS[0]/2.0, help="Focal length x (pixels)")
 parser.add_argument("--fy", type=float, default=CALIBRATION_VALS[1]/2.0, help="Focal length y (pixels)")
@@ -390,14 +400,13 @@ def main_loop():
                   [0, 0, 1]], dtype=np.float64)
 
     print("Camera intrinsics K:\n", K)
-
+        
+    reader = FrameReader(args.source)
+    vo = MonocularVO(K, n_features=args.n_features)
     imu_connected = False
     while imu_connected == False:
         with is_connected_lock:
             imu_connected = is_connected_imu
-        
-    reader = FrameReader(args.source)
-    vo = MonocularVO(K, n_features=args.n_features)
 
     FRAME_WINDOW = 1
     frame_count = 0
@@ -441,6 +450,7 @@ def main_loop():
                     print(f"Processed {frame_count} frames...")
 
     finally:
+        vo._end_imu_thread()
         reader.release()
         cv2.destroyAllWindows()
 
@@ -450,8 +460,4 @@ def main_loop():
     save_matplotlib_plot(TRAJECTORY, out_path=args.out)
 
 if __name__ == "__main__":
-    main_thread = threading.Thread(target=main_loop)
-    main_thread.start()
-
-    imu_thread = threading.Thread(target=IMU_READER, args=(main_thread,))
-    imu_thread.start()
+    main_loop()
