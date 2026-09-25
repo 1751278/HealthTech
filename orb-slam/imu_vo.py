@@ -130,7 +130,11 @@ class MonocularVO:
         self.stop_signal = threading.Event()
         self.imu_thread = threading.Thread(target=IMU_READER, args=(self.stop_signal,))
         self.imu_thread.start()
-        time.sleep(5)  # Allow IMU thread to initialize and connect
+        # Allow IMU thread to initialize and connect
+        imu_connected = False
+        while imu_connected == False:
+            with is_connected_lock:
+                imu_connected = is_connected_imu
 
         # consistently use the same CPU/GPU device.
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
