@@ -83,7 +83,7 @@ result = subprocess.Popen(
 
 
 # --- Capture ---
-DEFAULT_SOURCE   = '1'    # Camera index or file path
+DEFAULT_SOURCE   = 'orb-slam/vo_videos/vid1.mp4'    # Camera index or file path
 FRAME_WIDTH      = 360
 FRAME_HEIGHT     = 640
 DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
@@ -568,7 +568,7 @@ def navigate():
         h, w  = frame.shape[:2]
 
         md = dict(shape=frame.shape, dtype=str(frame.dtype))
-        encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
         
         if encoded:
             
