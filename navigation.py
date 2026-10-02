@@ -11,6 +11,7 @@
 # - Need to combine door path and avoidance path for guidance to the door
 # - Change song please... Or maybe some way to allow user to change it themselves
 #################
+from email.mime import message
 import subprocess
 import argparse
 import sys
@@ -24,8 +25,33 @@ import sounddevice as sd
 import math
 import zmq
 
+import zmq
+from zmq.decorators import socket
+
+ip_address = "127.0.0.1"
+port1 = "5555"
+port2 = "5556"
 
 
+
+
+ctx = zmq.Context()
+
+# --- SENDER ---
+sender = ctx.socket(zmq.PUSH)
+sender.setsockopt(zmq.CONFLATE, 1) 
+sender.bind(f"tcp://{ip_address}:{port1}")
+print("Sender ready... on port: ", port1)
+
+poller_send = zmq.Poller()
+poller_send.register(sender, zmq.POLLOUT)
+BUFFER_TIME = 500 # milliseconds to buffer for sending the frame to the vo process
+# --- Receiver ---
+receiver = ctx.socket(zmq.SUB)
+receiver.connect(f"tcp://{ip_address}:{port2}") # Change to Server IP later
+receiver.setsockopt_string(zmq.SUBSCRIBE, "") # Subscribe to all messages
+
+print("Receiver ready... on port: ", port2)
 sys.path.append('./Depth-Anything-V2')
 import os
 
@@ -46,30 +72,21 @@ DEPTH_OUT_CHANNELS = [48, 96, 192, 384]
 # --- VO ---
 VO_venv = os.path.abspath("./orb-slam/.venv/Scripts/python.exe")
 VO_script = os.path.abspath("./orb-slam/monocular_vo.py")
-VO_ZMQ_ADDRESS = "tcp://localhost:5555"  # TODO: confirm this matches the bind address VO's publisher uses
-# ETHAN EDIT 
-vo_context = zmq.Context()
-vo_socket = vo_context.socket(zmq.SUB)
-vo_socket.connect(VO_ZMQ_ADDRESS)
-vo_socket.setsockopt_string(zmq.SUBSCRIBE, "")
-
-# Holds the most recently received trajectory from VO. Starts empty until the
-# first message comes in — navigate() should tolerate this being None.
-latest_vo_trajectory = None
 
 result = subprocess.run(
     [VO_venv, VO_script],
     cwd=os.path.dirname(VO_script), #Make the cwd the same as the script so it can find the calibration data
-    capture_output=True, 
+    #stdout=subprocess.PIPE, #As far as I understand, this is for prints
+    #stderr=subprocess.PIPE, #This is for errors
     text=True
 )
 
-print(result)
+
 
 # --- Capture ---
 DEFAULT_SOURCE   = '1'    # Camera index or file path
-FRAME_WIDTH      = 640
-FRAME_HEIGHT     = 480
+FRAME_WIDTH      = 360
+FRAME_HEIGHT     = 640
 DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
  
 # --- Audio ---
@@ -143,7 +160,16 @@ DEBUG_ZONES = True
 # =============================================================================
 # SETUP AND MODEL LOADING
 # =============================================================================
- 
+
+
+
+poller_recv = zmq.Poller()
+poller_recv.register(receiver, zmq.POLLIN)
+
+
+print("Streaming video... Listening for feedback on port 5556.")
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--source',         default=DEFAULT_SOURCE)
 parser.add_argument('--yolo-interval',  type=int, default=DEFAULT_YOLO_INTERVAL)
@@ -375,7 +401,7 @@ def navigate():
     # Note: If Camo studio is not open, you may need to change source to (source - 1)
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
-        print("Camo Studio not detected, trying default camera...")
+        print("Camo Studio not detected, trying default camera... (" + str(source - 1) + ")")
         cap = cv2.VideoCapture(source - 1)
         if not cap.isOpened():
             print("Error: Could not open video source.")
@@ -413,14 +439,36 @@ def navigate():
     """
     while True:
         ret, frame = cap.read()
+        
         if not ret:  # end of video file or camera error
+            print("Error: Could not read frame from video source.")
             exit_reason = "stream_ended"
             break
         
         # Resize the depth frame
         frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT)) 
         h, w  = frame.shape[:2]
- 
+
+        md = dict(shape=frame.shape, dtype=str(frame.dtype))
+        encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
+        
+        if encoded:
+            socks = dict(poller_send.poll(BUFFER_TIME))
+            if sender in socks and socks[sender] == zmq.POLLOUT:
+                # Socket is ready; send without blocking
+                sender.send(buffer.tobytes())
+        #Check for feedback
+        socks = dict(poller_recv.poll(timeout=0))
+        if socks.get(receiver): #Probably working
+            feedback_msg = receiver.recv()
+
+            trajectory = np.frombuffer( #Reconstruct back to a shape of (N, 3, 1) where N is the number of frames in the trajectory
+                feedback_msg,
+                dtype=np.float64
+            ).reshape(-1, 3, 1)
+
+            print("Received trajectory:", trajectory.shape)
+
         # --- Depth estimation ---
         if frame_num % args.depth_interval == 0:
             raw = depth_model.infer_image(frame, DEPTH_INFER_SIZE)  # returns a 2D array of depth values (higher = closer)
@@ -568,8 +616,51 @@ def navigate():
         if index != -1:
             door_direction = get_door_steer(boxes[index], w, yolo.names)
         else:
-            door_direction = last_door_direction  # keep going toward the last known door direction if we lose sight of it
+            door_direction = door_state["last_door_direction"]  # keep going toward the last known door direction if we lose sight of it
+            max_conf = door_state["last_door_confidence"]*math.exp(-0.01*(frame_num - door_state["last_seen_frame"])) #If we don't see a door, use the last known confidence to determine how much to trust the last known direction
+            print(max_conf, " On frame: ", frame_num - door_state["last_seen_frame"], " Orignial confidence: ", door_state["last_door_confidence"])
+            
+        # -- Object Detection using yolo26 for desk and chair avoidance. WIP --
+        #"""
+        if frame_num % args.yolo_default_interval == 0:
+            results26 = yolo26(frame, verbose=False)
+            boxes26   = results26[0].boxes
+        # --- Draw Frame ---
+        for i, box in enumerate(boxes26):
+            label           = yolo26.names[int(box.cls[0])]
+            x1, y1, x2, y2 = map(int, box.xyxy[0])  # bounding box coordinates
+            color           = BOX_COLOR_OTHER
+            conf26 = box.conf.item()
+            if conf26 > OTHER_CONFIDENCE_THRESHOLD:
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)  # draw box
+                cv2.putText(frame, label, (x1, y1 - 5),cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)  # draw label
+        #"""
+        # get steer with obect detection
+        print(direction)
+        direction = get_steer_from_objects(boxes26, depth_uint8, direction)
+        print(direction)
+        #Call combine steer and use what we have currently to determine the final direction
         
+
+        combined_direction = combine_steer(direction, door_direction, max_conf, col['c'])
+
+        #smoothen direction with moving average
+        direction_history[:-1] = direction_history[1:]
+        direction_history[-1] = combined_direction
+        directionArray = direction_history * direction_smoothen
+        smooth_direction = np.sum(directionArray)
+        ### Direction should be finalized at this point
+        
+        if smooth_direction > 0:
+            audio_state["left_vol"] = 0.0
+            audio_state["right_vol"] = abs(smooth_direction)/90.0 # scale volume by how strong the turn is
+        else:
+            audio_state["right_vol"] = 0.0
+            audio_state["left_vol"] = abs(smooth_direction)/90.0 # scale volume by how strong the turn is
+
+ 
+
+        ##################### Draw Arrows
         start_point = (w//2, h//2)
         end_point = (int(math.sin(math.radians(direction)) * 100 + w//2), int(-math.cos(math.radians(direction)) * 100 + h//2))
         cv2.arrowedLine(frame, start_point, end_point, (0, 255, 0), 2)  # draw green arrow for avoidance direction
@@ -580,7 +671,10 @@ def navigate():
         # display camera frame and depth side by side
         out = np.hstack([frame, depth_color]) if depth_color is not None else frame
         cv2.imshow('navigator', out)
- 
+
+
+
+
         # Exit on 'q' key press
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
@@ -592,6 +686,14 @@ def navigate():
     cap.release()
     cv2.destroyAllWindows()
 
+    
+    result.terminate()  # terminate the ZMQ context
+    result.wait()
+    print("ZMQ process terminated.")
+    sender.setsockopt(zmq.LINGER, 0)
+    sender.close()
+    receiver.close()
+    
     return {"frames_processed": frame_num, "exit_reason": exit_reason}
  
 # calling the function
