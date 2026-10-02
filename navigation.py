@@ -23,7 +23,7 @@ import matplotlib
 import soundfile as sf
 import sounddevice as sd
 import math
-import zmq
+import tensorflow as tf
 
 import zmq
 from zmq.decorators import socket
@@ -71,10 +71,9 @@ DEPTH_OUT_CHANNELS = [48, 96, 192, 384]
 
 # --- VO ---
 VO_venv = os.path.abspath("./orb-slam/.venv/Scripts/python.exe")
-VO_script = os.path.abspath("./orb-slam/monocular_vo.py")
-
-result = subprocess.run(
-    [VO_venv, VO_script],
+VO_script = os.path.abspath("./orb-slam/run_vo.py")
+result = subprocess.Popen(
+    [VO_venv, "-u", VO_script],
     cwd=os.path.dirname(VO_script), #Make the cwd the same as the script so it can find the calibration data
     #stdout=subprocess.PIPE, #As far as I understand, this is for prints
     #stderr=subprocess.PIPE, #This is for errors
@@ -84,7 +83,7 @@ result = subprocess.run(
 
 
 # --- Capture ---
-DEFAULT_SOURCE   = '1'    # Camera index or file path
+DEFAULT_SOURCE   = 'orb-slam/vo_videos/vid1.mp4'    # Camera index or file path
 FRAME_WIDTH      = 360
 FRAME_HEIGHT     = 640
 DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
@@ -618,7 +617,7 @@ def navigate():
         else:
             door_direction = door_state["last_door_direction"]  # keep going toward the last known door direction if we lose sight of it
             max_conf = door_state["last_door_confidence"]*math.exp(-0.01*(frame_num - door_state["last_seen_frame"])) #If we don't see a door, use the last known confidence to determine how much to trust the last known direction
-            print(max_conf, " On frame: ", frame_num - door_state["last_seen_frame"], " Orignial confidence: ", door_state["last_door_confidence"])
+            #print(max_conf, " On frame: ", frame_num - door_state["last_seen_frame"], " Orignial confidence: ", door_state["last_door_confidence"])
             
         # -- Object Detection using yolo26 for desk and chair avoidance. WIP --
         #"""
@@ -636,9 +635,9 @@ def navigate():
                 cv2.putText(frame, label, (x1, y1 - 5),cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)  # draw label
         #"""
         # get steer with obect detection
-        print(direction)
+
         direction = get_steer_from_objects(boxes26, depth_uint8, direction)
-        print(direction)
+
         #Call combine steer and use what we have currently to determine the final direction
         
 
