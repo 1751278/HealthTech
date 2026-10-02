@@ -15,6 +15,7 @@
 # - try to find a qunatized version of depth model
 # - implement desk and chair avoidance with yolo model 26 S and E 
 #################
+from email.mime import message
 import subprocess
 import argparse
 import sys
@@ -29,6 +30,7 @@ import math
 import tensorflow as tf
 
 import zmq
+from zmq.decorators import socket
 
 ip_address = "127.0.0.1"
 port1 = "5555"
@@ -44,6 +46,10 @@ sender = ctx.socket(zmq.PUSH)
 sender.setsockopt(zmq.CONFLATE, 1) 
 sender.bind(f"tcp://{ip_address}:{port1}")
 print("Sender ready... on port: ", port1)
+
+poller_send = zmq.Poller()
+poller_send.register(sender, zmq.POLLOUT)
+BUFFER_TIME = 500 # milliseconds to buffer for sending the frame to the vo process
 # --- Receiver ---
 receiver = ctx.socket(zmq.SUB)
 receiver.connect(f"tcp://{ip_address}:{port2}") # Change to Server IP later
@@ -186,8 +192,8 @@ direction_smoothen = np.array([0.05, 0.05, 0.1, 0.1, 0.7])
 
 
 
-poller = zmq.Poller()
-poller.register(receiver, zmq.POLLIN)
+poller_recv = zmq.Poller()
+poller_recv.register(receiver, zmq.POLLIN)
 
 
 print("Streaming video... Listening for feedback on port 5556.")
@@ -571,10 +577,12 @@ def navigate():
         encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
         
         if encoded:
-            
-            sender.send(buffer.tobytes())
+            socks = dict(poller_send.poll(BUFFER_TIME))
+            if sender in socks and socks[sender] == zmq.POLLOUT:
+                # Socket is ready; send without blocking
+                sender.send(buffer.tobytes())
         #Check for feedback
-        socks = dict(poller.poll(timeout=0))
+        socks = dict(poller_recv.poll(timeout=0))
         if socks.get(receiver): #Probably working
             feedback_msg = receiver.recv()
 
@@ -754,6 +762,7 @@ def navigate():
     result.terminate()  # terminate the ZMQ context
     result.wait()
     print("ZMQ process terminated.")
+    sender.setsockopt(zmq.LINGER, 0)
     sender.close()
     receiver.close()
     
