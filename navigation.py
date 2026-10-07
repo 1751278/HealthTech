@@ -47,6 +47,17 @@ poller_send = zmq.Poller()
 poller_send.register(sender, zmq.POLLOUT)
 BUFFER_TIME = 500 # milliseconds to buffer for sending the frame to the vo process
 # --- Receiver ---
+VO_ZMQ_ADDRESS = "tcp://localhost:5555"  # TODO: confirm this matches the bind address VO's publisher uses
+# ETHAN EDIT 
+vo_context = zmq.Context()
+vo_socket = vo_context.socket(zmq.SUB)
+vo_socket.connect(VO_ZMQ_ADDRESS)
+vo_socket.setsockopt_string(zmq.SUBSCRIBE, "")
+
+# Holds the most recently received trajectory from VO. Starts empty until the
+# first message comes in — navigate() should tolerate this being None.
+latest_vo_trajectory = None
+
 receiver = ctx.socket(zmq.SUB)
 receiver.connect(f"tcp://{ip_address}:{port2}") # Change to Server IP later
 receiver.setsockopt_string(zmq.SUBSCRIBE, "") # Subscribe to all messages
@@ -117,34 +128,42 @@ BLOCKED_THRESHOLD = 150   # above this center value, consider the forward path b
 OBJECT_AREA_THRESH_MAX = 150000 #above this value the object is just everything
 OBJECT_AREA_THRESH_MIN = 50000 #below this value the object is too small
 OBJECT_STEER_SENSITIVITY = 0.000001 #sensitivity of steering if large object detected
+
+# --- Object detection ---
+YOLO26_MODEL_PATH = "YoloModels/yolo26n.pt"  # CHANGE to your actual YOLO26 model
+OTHER_CONFIDENCE_THRESHOLD = 0.25
+
+# --- Steering smoothing ---
+DIRECTION_HISTORY_LEN = 5  # number of frames in the moving-average window for steering
+
 # --- Zone weights ---
 # Bottom zones are weighted more heavily than top zones because
 # obstacles at foot level are more immediately dangerous.
 TOP_WEIGHT = 0.4
 BOT_WEIGHT = 0.6
- 
+
 # --- Steering thresholds ---
 # All values are in depth_uint8 space (0–255), where higher = closer/more red.
- 
+
 # A zone's max must exceed this to be considered "extremely close" (bright red).
 EXTREME_RED_THRESHOLD = 210
- 
+
 # Center column weighted-average must be this much lower than the best side
 # column to confidently go forward (avoids wobbling when margins are tiny).
 FORWARD_MARGIN = 15
- 
+
 # If ALL column weighted-averages exceed this, trigger the all-blocked panic.
 ALL_BLOCKED_THRESHOLD = 160
- 
+
 # When turning, keep turning until center avg drops this far below the
 # turning-side avg (like center is clearly becoming the best path.)
 TURN_DONE_MARGIN = 10
- 
+
 # --- Hysteresis ---
 # Number of consecutive frames that must agree on a new direction before
 # we actually switch. Prevents flickering between commands.
 HYSTERESIS_FRAMES = 4
- 
+
 # --- Visualization ---
 DEPTH_COLORMAP  = 'Spectral_r'
 STEER_COLOR     = (0, 255, 100)   # BGR
@@ -152,10 +171,10 @@ STEER_FONT_SCALE = 0.8
 STEER_THICKNESS  = 2
 BOX_COLOR_DOOR   = (0, 220, 220)  # BGR — door labels
 BOX_COLOR_OTHER  = (0,  60, 220)  # BGR — non-door labels
- 
+
 # Debug: print the 12 zone values every depth frame
 DEBUG_ZONES = True
- 
+
 # =============================================================================
 # SETUP AND MODEL LOADING
 # =============================================================================
@@ -175,13 +194,14 @@ parser.add_argument('--yolo-interval',  type=int, default=DEFAULT_YOLO_INTERVAL)
 parser.add_argument('--depth-interval', type=int, default=DEFAULT_DEPTH_INTERVAL)
 args   = parser.parse_args()
 source = int(args.source) if args.source.isdigit() else args.source
- 
+
 DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
 cmap   = matplotlib.colormaps.get_cmap(DEPTH_COLORMAP)
 LUT = (cmap(np.arange(256))[:, :3] * 255).astype(np.uint8)[:, ::-1]
 print("loading models...")
 yolo = YOLO(YOLO_MODEL_PATH)
- 
+yolo26 = YOLO(YOLO26_MODEL_PATH)
+
 depth_model = DepthAnythingV2(
     encoder=DEPTH_ENCODER,
     features=DEPTH_FEATURES,
@@ -189,25 +209,25 @@ depth_model = DepthAnythingV2(
 )
 depth_model.load_state_dict(torch.load(DEPTH_MODEL_PATH, map_location='cpu'))
 depth_model = depth_model.to(DEVICE).eval()
- 
+
 # =============================================================================
 # STEERING ALGORITHM
 # =============================================================================
- 
+
 def get_zone_stats(depth_uint8):
     """
     Split depth map into 6 zones (top/bottom × left/center/right) and
     return the 12 descriptive variables:
       - avg: mean depth value  (higher = closer)
       - max: peak depth value  (higher = more extreme red)
- 
+
     Also returns a bottom-weighted column average for each of the 3 columns,
     blending top and bottom zones using TOP_WEIGHT / BOT_WEIGHT.
     """
     h, w = depth_uint8.shape
     top  = depth_uint8[:h//2, :]
     bot  = depth_uint8[h//2:, :]
- 
+
     # Raw zone slices
     zones = {
         'tl': top[:, :w//3],
@@ -217,23 +237,23 @@ def get_zone_stats(depth_uint8):
         'bc': bot[:, w//3:2*w//3],
         'br': bot[:, 2*w//3:],
     }
- 
+
     stats = {k: {'avg': float(v.mean()), 'max': float(v.max())} for k, v in zones.items()}
- 
+
     # Weighted column averages (bot counts more)
     col = {}
     for side in ('l', 'c', 'r'):
         t = stats[f't{side}']['avg']
         b = stats[f'b{side}']['avg']
         col[side] = TOP_WEIGHT * t + BOT_WEIGHT * b
- 
+
     return stats, col
- 
- 
+
+
 def get_steer(depth_uint8):
     """
     Compute steering direction from depth map using 12-variable zone analysis.
- 
+
     Decision priority (highest → lowest):
       1. All-blocked panic   — everything is dangerously close → turn right
       2. Forward             — center weighted-avg is lowest by FORWARD_MARGIN AND no extreme reds in center zones
@@ -242,10 +262,10 @@ def get_steer(depth_uint8):
     """
     # Get zone stats and column averages
     stats, col = get_zone_stats(depth_uint8)
- 
+
     # Debug printout of all zone values. Commented out by default.
     """
-    if DEBUG_ZONES: 
+    if DEBUG_ZONES:
         print(
             f"L={col['l']:.1f}  C={col['c']:.1f}  R={col['r']:.1f}  |  "
             f"tl_avg={stats['tl']['avg']:.0f} tc_avg={stats['tc']['avg']:.0f} tr_avg={stats['tr']['avg']:.0f}  "
@@ -255,11 +275,11 @@ def get_steer(depth_uint8):
             end="  ->  "
         )
     """
-    
+
     # --- 1. All-blocked panic ---
     if all(col[s] > ALL_BLOCKED_THRESHOLD for s in ('l', 'c', 'r')):
         steer = ">> TURN RIGHT"  # default escape direction when fully boxed in
- 
+
     # --- 2. Forward: center is clearly the best and has no extreme reds ---
     elif (
         col['c'] < col['l'] - FORWARD_MARGIN and
@@ -268,7 +288,7 @@ def get_steer(depth_uint8):
         stats['bc']['max'] < EXTREME_RED_THRESHOLD
     ):
         steer = "^ FORWARD"
- 
+
     # --- 3. Turn toward the clearer side ---
     elif col['l'] < col['r']:
         # Left column is further away — turn left
@@ -278,11 +298,11 @@ def get_steer(depth_uint8):
         # Right column is further away — turn right
         # Keep turning until center becomes best (handled by hysteresis in navigate())
         steer = ">> TURN RIGHT"
- 
+
     # --- 4. Fallback: columns are roughly equal, prefer right ---
     else:
         steer = ">> TURN RIGHT"
- 
+
     #print(steer)
     return steer, col, stats
 
@@ -294,7 +314,7 @@ def get_better_steer(depth_uint8):
     stats, col = get_zone_stats(depth_uint8)
     # Debug printout of all zone values. Commented out by default.
     """
-    if DEBUG_ZONES: 
+    if DEBUG_ZONES:
         print(
             f"L={col['l']:.1f}  C={col['c']:.1f}  R={col['r']:.1f}  |  "
             f"tl_avg={stats['tl']['avg']:.0f} tc_avg={stats['tc']['avg']:.0f} tr_avg={stats['tr']['avg']:.0f}  "
@@ -316,7 +336,7 @@ def get_better_steer(depth_uint8):
             direction += forward_prob * const_foward #If center blocked, go more left based on how blocked it is.
         else:
             direction -= forward_prob * const_foward#If center blocked, go more right based on how blocked it is.
-    
+
     direction = max(-90, min(90, direction))  # clamp to [-90, 90]
 
     if direction > 0:
@@ -335,13 +355,13 @@ def audio_callback(outdata, frames, time_info, status):
     global audio_location
     if status:
         print(status)
-        
+
     # Read the current values from our shared dictionary
     #f_left = audio_state["left_freq"]
     #f_right = audio_state["right_freq"]
     v_left = audio_state["left_vol"]
     v_right = audio_state["right_vol"]
-    
+
     # Create the time array for this chunk
     t = (np.arange(frames) + audio_location) % len(AUDIO_DATA) #the len(AUDIO_DATA) part makes it loop
 
@@ -355,16 +375,62 @@ def audio_callback(outdata, frames, time_info, status):
     # Takes the audio data and multiplies it by a volume factor
     left_side = mono * v_left
     right_side = mono * v_right
-    
+
     # Write to the output channels
     outdata[:, 0] = left_side
     outdata[:, 1] = right_side
-    
+
     # Update the audio location (Basically just phase but renamed, didn't realize that this is basically the same thing :/)
     audio_location = (audio_location + frames) % len(AUDIO_DATA)
-    
+
     # Keep the wave continuous
     #phase += frames
+
+
+def get_steer_from_objects(boxes, depth_uint8, direction):
+    """
+    Adjust steering away from detected non-door objects.
+    Positive direction = right
+    Negative direction = left
+    """
+    h, w = depth_uint8.shape
+    for box in boxes:
+        conf = box.conf.item()
+        if conf < OTHER_CONFIDENCE_THRESHOLD:
+            continue
+
+        x1, y1, x2, y2 = map(int, box.xyxy[0])
+
+        # Clamp coordinates to the depth image
+        x1 = max(0, min(x1, w - 1))
+        x2 = max(0, min(x2, w))
+        y1 = max(0, min(y1, h - 1))
+        y2 = max(0, min(y2, h))
+
+        if x2 <= x1 or y2 <= y1:
+            continue
+
+        area = (x2 - x1) * (y2 - y1)
+        area_ratio = area / float(w * h)
+
+        # Ignore very small detections
+        if area < OBJECT_AREA_THRESH_MIN:
+            continue
+
+        # Estimate how close the object is
+        roi = depth_uint8[y1:y2, x1:x2]
+        if roi.size == 0:
+            continue
+        closeness = float(roi.mean()) / 255.0  # 0 = far, 1 = very close
+
+        center_x = (x1 + x2) / 2.0
+        offset = (center_x - w / 2.0) / (w / 2.0)  # -1 = far left, +1 = far right
+
+        # Steer away from the side the object sits on, scaled by how close and
+        # how much of the frame it fills.
+        direction -= offset * closeness * area_ratio * (90.0 - abs(direction))
+
+    return max(-90, min(90, direction))
 
 
 def get_door_steer(box, frame_width, yolo_names, thresh=0.2):
@@ -381,12 +447,31 @@ def get_door_steer(box, frame_width, yolo_names, thresh=0.2):
     if last_door_direction is not None:
         return last_door_direction
     return 90
-def combine_steer(obstacle_dir, door_dir, depth_uint8):
-     pass
+
+
+def combine_steer(obstacle_dir, door_dir, door_confidence, center_depth):
+    """
+    Combine obstacle avoidance steering with door-seeking steering.
+    Positive = right
+    Negative = left
+    """
+    door_weight = max(0.0, min(1.0, door_confidence))
+
+    # If the center is heavily blocked, trust obstacle avoidance more.
+    if center_depth > BLOCKED_THRESHOLD:
+        door_weight *= 0.25
+
+    combined = (
+        obstacle_dir * (1.0 - door_weight)
+        + door_dir * door_weight
+    )
+    return max(-90, min(90, combined))
+
+
 # =============================================================================
 # MAIN LOOP
 # =============================================================================
-        
+
 
 
 
@@ -405,10 +490,26 @@ def navigate():
         if not cap.isOpened():
             print("Error: Could not open video source.")
             exit()
- 
+
     frame_num   = 0
     depth_color = None
     boxes       = []
+    boxes26     = []
+    depth_uint8 = None
+    col         = None
+    col         = None
+
+    # Moving-average window used to smooth the final steering direction
+    direction_history  = np.zeros(DIRECTION_HISTORY_LEN, dtype=float)
+    direction_smoothen = np.ones(DIRECTION_HISTORY_LEN, dtype=float) / direction_history.size
+
+    # Tracks the last confidently-seen door so steering can coast on it
+    door_state = {
+        "last_door_direction": 90.0,
+        "last_door_confidence": 0.0,
+        "last_seen_frame": 0,
+    }
+    door_direction = door_state["last_door_direction"]
 
     # FIX: initialize direction so the arrow doesn't crash before depth runs
     direction = 0.0
@@ -419,7 +520,7 @@ def navigate():
     # Initialize smoothed depth for visualization (not used in steering)
     smoothed_depth = None
     ALPHA = 0.7  # how much to trust the new frame vs history
- 
+
     # Hysteresis state
     committed_steer  = "^ FORWARD"   # the direction currently being acted on
     vote_buffer      = collections.deque(maxlen=HYSTERESIS_FRAMES)  # buffer of recent steer decisions for hysteresis voting
@@ -438,19 +539,19 @@ def navigate():
     """
     while True:
         ret, frame = cap.read()
-        
+
         if not ret:  # end of video file or camera error
             print("Error: Could not read frame from video source.")
             exit_reason = "stream_ended"
             break
-        
+
         # Resize the depth frame
-        frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT)) 
+        frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
         h, w  = frame.shape[:2]
 
         md = dict(shape=frame.shape, dtype=str(frame.dtype))
         encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
-        
+
         if encoded:
             socks = dict(poller_send.poll(BUFFER_TIME))
             if sender in socks and socks[sender] == zmq.POLLOUT:
@@ -471,24 +572,23 @@ def navigate():
         # --- Depth estimation ---
         if frame_num % args.depth_interval == 0:
             raw = depth_model.infer_image(frame, DEPTH_INFER_SIZE)  # returns a 2D array of depth values (higher = closer)
-            
+
             # Normalize raw depth to 0–255 for visualization and smoothing. Add small epsilon to denominator to avoid division by zero.
             raw_norm = ((raw - raw.min()) / (raw.max() - raw.min() + 1e-6) * 255).astype(np.float32)
-            
+
             # Apply smoothing
             if smoothed_depth is None:
                 smoothed_depth = raw_norm
             else:
                 smoothed_depth = ALPHA * raw_norm + (1 - ALPHA) * smoothed_depth
-                
+
             # Convert to uint8 for steering algorithm and visualization
             depth_uint8 = smoothed_depth.astype(np.uint8)
-             
+
             # raw_steer is the new candidate direction based on current depth map
             raw_steer, col, stats = get_steer(depth_uint8)
-
             direction = get_better_steer(depth_uint8)
- 
+
             # Hysteresis: only commit to a new direction after HYSTERESIS_FRAMES
             # consecutive frames agree on it.
             vote_buffer.append(raw_steer)
@@ -510,7 +610,7 @@ def navigate():
 
             # Index into LUT for fast colormap application
             depth_color = LUT[depth_uint8]
-            
+
             # Resize depth frame for side-by-side display
             depth_color = cv2.resize(depth_color, (w, h))
 
@@ -546,14 +646,14 @@ def navigate():
                         direction += max_area * avg_red * OBJECT_STEER_SENSITIVITY
                     else:
                         direction -= max_area * avg_red * OBJECT_STEER_SENSITIVITY
-            elif avg_x < FRAME_WIDTH//2: 
+            elif avg_x < FRAME_WIDTH//2:
                 direction -= max_area * avg_red * OBJECT_STEER_SENSITIVITY
             else:
                 direction += max_area * avg_red * OBJECT_STEER_SENSITIVITY
-                
+
             direction = max(-90, min(90, direction))  # clamp to [-90, 90]
 
-       
+
         try:
             raw = vo_socket.recv(flags=zmq.NOBLOCK)
             # TODO: replace this once VO's actual wire format is finalized.
@@ -564,7 +664,7 @@ def navigate():
             latest_vo_trajectory = raw  # placeholder: just stash the bytes for now
         except zmq.Again:
             pass  # no new trajectory data this frame — keep using the last o
-        
+
         if direction > 0:
             audio_state["left_vol"] = 0.0
             audio_state["right_vol"] = abs(direction)/90.0 # scale volume by how strong the turn is
@@ -573,11 +673,11 @@ def navigate():
             audio_state["left_vol"] = abs(direction)/90.0 # scale volume by how strong the turn is
 
 
-            
+
 
         cv2.drawContours(frame, contours, -1, (0, 255, 0), 2)
         ##############################################
- 
+
         # --- Object detection ---
         if frame_num % args.yolo_interval == 0:
             results = yolo(frame, verbose=False)
@@ -595,7 +695,7 @@ def navigate():
                     committed_steer = "^ FORWARD"
                 print(f"Door detected on {door_side}, overriding steer to: {committed_steer}")
             """
- 
+
         # --- Draw Frame ---
         max_conf = 0
         index = -1
@@ -610,18 +710,21 @@ def navigate():
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)  # draw box
             cv2.putText(frame, label, (x1, y1 - 5),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)  # draw label
- 
+
         #Get straghtline steering to the door if one is detected with high confidence
         if index != -1:
             door_direction = get_door_steer(boxes[index], w, yolo.names)
+            door_state["last_door_direction"] = door_direction
+            door_state["last_door_confidence"] = max_conf
+            door_state["last_seen_frame"] = frame_num
         else:
             door_direction = door_state["last_door_direction"]  # keep going toward the last known door direction if we lose sight of it
             max_conf = door_state["last_door_confidence"]*math.exp(-0.01*(frame_num - door_state["last_seen_frame"])) #If we don't see a door, use the last known confidence to determine how much to trust the last known direction
             #print(max_conf, " On frame: ", frame_num - door_state["last_seen_frame"], " Orignial confidence: ", door_state["last_door_confidence"])
-            
+
         # -- Object Detection using yolo26 for desk and chair avoidance. WIP --
         #"""
-        if frame_num % args.yolo_default_interval == 0:
+        if frame_num % args.yolo_interval == 0:
             results26 = yolo26(frame, verbose=False)
             boxes26   = results26[0].boxes
         # --- Draw Frame ---
@@ -636,12 +739,16 @@ def navigate():
         #"""
         # get steer with obect detection
 
-        direction = get_steer_from_objects(boxes26, depth_uint8, direction)
+        if depth_uint8 is not None:
+            direction = get_steer_from_objects(boxes26, depth_uint8, direction)
 
         #Call combine steer and use what we have currently to determine the final direction
-        
-
-        combined_direction = combine_steer(direction, door_direction, max_conf, col['c'])
+        combined_direction = combine_steer(
+            direction,
+            door_direction,
+            max_conf,
+            col['c'] if depth_uint8 is not None else 0.0,
+        )
 
         #smoothen direction with moving average
         direction_history[:-1] = direction_history[1:]
