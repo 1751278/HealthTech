@@ -102,7 +102,7 @@ with open(CALIBRATION_PATH, "r") as file:
 
 
 FRAME_WINDOW = 1  # Process every Nth frame for VO
-SEND_INTERVAL = 30  # Send trajectory every N frames
+SEND_INTERVAL = 5   # Send trajectory every N frames
 def main():
     parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
     parser.add_argument("--source", default="vo_videos/vid1.mp4",
@@ -121,35 +121,35 @@ def main():
     parser.add_argument("--out", default="trajectory.png", help="Output path for the final trajectory plot")
     args = parser.parse_args()
     K = np.array([[args.fx, 0, args.cx],[0, args.fy, args.cy],[0, 0, 1]], dtype=np.float64)
-    
+
     print("Camera intrinsics K:\n", K)
 
     reader = fr(args.source)
     vo = voclass(K, n_features=args.n_features)
-    
+
     frame_count = 0
     old_frame = None
     while True:
-        
+
         frame_bytes = reciever.recv()
 
-        
+
         np_array = np.frombuffer(frame_bytes, dtype=np.uint8)
         frame = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
 
         if frame is None:
             break
-        
+
         frame = cv2.resize(frame, (int(720*RES_SCALE), int(1280*RES_SCALE)))  # Resize for faster processing
         if frame_count % FRAME_WINDOW == 0:
             kp, matches = vo.process_frame(frame, frame_count, scale=args.scale)
-            
+
             traj_canvas = draw_trajectory_canvas(vo.trajectory)
-            
+
             if frame_count % SEND_INTERVAL == 0:
                 print("ABOUT TO SEND", flush=True)
 
-                trajectory_data = np.array(vo.trajectory, dtype=np.float64) #Convert to numpy array for sending
+                trajectory_data = np.array(vo.trajectory[-300:], dtype=np.float64) #Only the most recent 300 points, so the message stays a fixed size
 
                 print(f"Trajectory shape: {trajectory_data.shape}, "f"dtype: {trajectory_data.dtype}, "f"bytes: {trajectory_data.nbytes}",flush=True)
 

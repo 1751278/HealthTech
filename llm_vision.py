@@ -20,8 +20,12 @@ import os
 import queue
 import threading
 import time
+from dotenv import load_dotenv
+from pathlib import Path
 
 import cv2
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 DEFAULT_PROMPT = (
     "You are a real-time navigation assistant for a blind or low-vision "
@@ -32,6 +36,20 @@ DEFAULT_PROMPT = (
     "rough direction (left/right/ahead) if relevant."
 )
 
+GOAL_PROMPT = (
+    "You are the route planner for a blind person walking indoors. The user's GOAL and sensor notes "
+    "are given below. Choose the next short leg of the route, not the whole route. "
+    "Read any visible sign, room number or label and use it. Restroom signs may show symbols or the "
+    "words restroom, men, women, or WC. "
+    "If the goal itself is visible, target it. "
+    "If it is not, you are exploring: pick a waypoint that leads toward unexplored space, such as a "
+    "doorway, corridor opening, hallway end, or a sign. Never pick furniture, appliances, decor, or "
+    "anything below waist height as a waypoint. "
+    "If no such waypoint is visible, set target_visible=false and give only `heading`. "
+    "Set arrived=true only if the final goal is right in front of the user. "
+    "`instruction` is at most 12 words and is spoken aloud; mention an immediate hazard first. "
+    "Do not mention colors or lighting. Use only 'near' or 'far' for distance."
+)
 
 class LLMVisionAssistant:
     def __init__(
@@ -62,7 +80,7 @@ class LLMVisionAssistant:
 
         if provider == "gemini":
             from google import genai
-            self.model = model or "gemini-flash-latest"
+            self.model = model or "gemini-3.5-flash-lite"
             self._client = genai.Client(api_key=api_key or os.environ.get("GEMINI_API_KEY"))
         else:
             raise ValueError(f"Unknown provider: {provider!r} (expected 'openai', 'anthropic', or 'gemini')")
@@ -90,12 +108,12 @@ class LLMVisionAssistant:
             return
         self.force_submit(frame)
 
-    def force_submit(self, frame):
+    def force_submit(self, frame, context="", request_id=None):
         with self._state_lock:
             if self._busy:
                 return False
         try:
-            self._frame_queue.put_nowait(self._preprocess(frame))
+            self._frame_queue.put_nowait((self._preprocess(frame), context, request_id))
             return True
         except queue.Full:
             return False
@@ -120,14 +138,19 @@ class LLMVisionAssistant:
 
     def _worker_loop(self):
         while not self._stop_flag:
-            frame = self._frame_queue.get()
-            if frame is None:
+            item = self._frame_queue.get()
+            if item is None:
                 break
+            frame, context, request_id = item
             with self._state_lock:
                 self._busy = True
-            self._last_call_time = time.time()
+            self._last_call_time = t0 = time.time()
             try:
-                description = self._call_api(frame)
+                print(f"[llm_vision] Calling Gemini model={self.model}")
+                description = self._call_api(frame, context)
+                print("[llm_vision] response:", description)
+                description["request_id"] = request_id
+                print(f"[llm_vision] {time.time() - t0:.2f}s")
                 with self._state_lock:
                     self._description = description
             except Exception as e:
@@ -142,7 +165,7 @@ class LLMVisionAssistant:
             raise RuntimeError("JPEG encode failed")
         return base64.b64encode(buf).decode("utf-8")
 
-    def _call_api(self, frame):
+    def _call_api(self, frame, context=""):
         b64 = self._encode_jpeg_b64(frame)
 
         if self.provider == "openai":
@@ -176,6 +199,7 @@ class LLMVisionAssistant:
         elif self.provider == "gemini":
             from google.genai import types
             image_bytes = base64.b64decode(b64)
+            prompt = self.prompt + ("\n\n" + context if context else "")
 
             schema = {
                 "type": "OBJECT",
@@ -191,14 +215,25 @@ class LLMVisionAssistant:
                         "description": "Notable non-hazardous objects relevant to navigation: doors, furniture, signage, walls, open paths.",
                     },
                 },
-                "required": ["hazards", "objects"],
             }
+            schema["properties"].update({
+                "heading": {"type": "STRING",
+                            "enum": ["left", "slight_left", "ahead", "slight_right", "right", "turn_around"]},
+                "target_visible": {"type": "BOOLEAN"},
+                "arrived": {"type": "BOOLEAN"},
+                "instruction": {"type": "STRING"},
+                "target": {"type": "OBJECT", "properties": {
+                    "label": {"type": "STRING"},
+                    "ymin": {"type": "INTEGER"}, "xmin": {"type": "INTEGER"},
+                    "ymax": {"type": "INTEGER"}, "xmax": {"type": "INTEGER"}}},
+            })
+            schema["required"] = ["hazards", "objects", "heading", "target_visible", "arrived", "instruction"]
 
             response = self._client.models.generate_content(
                 model=self.model,
                 contents=[
                     types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
-                    self.prompt,
+                    prompt,
                 ],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
