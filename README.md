@@ -179,6 +179,17 @@ Work Split:
 
 **8.** Be happy!
 
+# How will the navigation.py work
+**1.** Collect all data(OCR, Depth, VO, IMU)
+
+**2.** Send it to LLM
+
+**3.** Ask for direction and coordinate in the image to track
+
+**4.** Go in the direction and track coordinate(if lose track of point then requery LLM, get to point close enough with depth map then go to next step)
+
+**5.** Repeat
+
 
 ---
 
