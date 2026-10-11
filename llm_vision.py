@@ -191,34 +191,30 @@ class LLMVisionAssistant:
             from google.genai import types
             image_bytes = base64.b64decode(b64)
             prompt = self.prompt + ("\n\n" + context if context else "")
-
-            schema = {
+            schema = { #Schematic LLM will follow
                 "type": "OBJECT",
                 "properties": {
-                    "hazards": {
-                        "type": "ARRAY",
-                        "items": {"type": "STRING"},
-                        "description": "Immediate dangers: steps, drop-offs, low overhangs, obstacles in the direct path, wet/uneven surfaces.",
+                    "action": {
+                        "type": "String",
+                        "description": "Either: 'turn' or 'target'",
                     },
-                    "objects": {
+                    "bbox": {
                         "type": "ARRAY",
-                        "items": {"type": "STRING"},
-                        "description": "Notable non-hazardous objects relevant to navigation: doors, furniture, signage, walls, open paths.",
+                        "items": {"type": "NUMBER"},
+                        "description": "Bounding box coordinates [x1, y1, x2, y2] for the selected target. Preferred over angle. SHOULD MATCH A BBOX GIVEN IN THE PROMPT",
                     },
+                    "angle": {
+                        "type": "NUMBER",
+                        "description": "The angle to turn, in degrees. Negative values mean left, positive values mean right.",
+                    },
+                    "reasoning": {
+                        "type": "String",
+                        "description": "The reasoning behind the selected action.",
+                    }
                 },
             }
-            schema["properties"].update({
-                "heading": {"type": "STRING",
-                            "enum": ["left", "slight_left", "ahead", "slight_right", "right", "turn_around"]},
-                "target_visible": {"type": "BOOLEAN"},
-                "arrived": {"type": "BOOLEAN"},
-                "instruction": {"type": "STRING"},
-                "target": {"type": "OBJECT", "properties": {
-                    "label": {"type": "STRING"},
-                    "ymin": {"type": "INTEGER"}, "xmin": {"type": "INTEGER"},
-                    "ymax": {"type": "INTEGER"}, "xmax": {"type": "INTEGER"}}},
-            })
-            schema["required"] = ["hazards", "objects", "heading", "target_visible", "arrived", "instruction"]
+
+            schema["required"] = ["action"]
 
             response = self._client.models.generate_content(
                 model=self.model,
@@ -226,7 +222,7 @@ class LLMVisionAssistant:
                     types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
                     prompt,
                 ],
-                config=types.GenerateContentConfig(
+                config=types.GenerateContentConfig( #Constraints the LLM to this format
                     response_mime_type="application/json",
                     response_schema=schema,
                     temperature=0.1,
@@ -236,4 +232,4 @@ class LLMVisionAssistant:
                 print("description received")
                 return json.loads(response.text)
             except (json.JSONDecodeError, TypeError):
-                return {"hazards": [], "objects": [], "_raw": response.text}
+                return {"action": "Stop"} #If the LLM fails to return a valid response

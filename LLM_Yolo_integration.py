@@ -32,7 +32,9 @@ class LLMProcessor:
                 obj_box_context = [self.xyxy_rescale(x1, y1, x2, y2, scale) for x1, y1, x2, y2 in obj_box_context]
         return frame, obj_box_context
 
-    
+    def get_result(self): #Return the latest LLM result as a dictionary.
+        return self.llm.latest_description()
+
     def xyxy_rescale(self, x1, y1, x2, y2, scale):
         return [int(coord * scale) for coord in [x1, y1, x2, y2]]
     

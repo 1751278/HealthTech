@@ -81,14 +81,14 @@ GOAL_PROMPT = (
     "short-distance movement.\n\n"
     "Return either a bbox in [x1, y1, x2, y2] format, matching one "
     "of the provided detections, or a turning angle if no suitable target "
-    "is available. Choose targets that appear to lead toward open, navigable "
+    "is available (prefer bboxes over angles). Choose targets that appear to lead toward open, navigable "
     "space or to the provided destination. Avoid selecting obvious obstacles as "
     "targets. Prefer continuing toward a useful existing target when appropriate.\n\n"
     "For a bbox, return its coordinates in the image's pixel space. "
     "For a turn, use degrees, with negative values meaning left and positive "
     "values meaning right.\n\n"
     'Output only a JSON object: {"action":"target","bbox":[x1,y1,x2,y2]} '
-    'or {"action":"turn","angle":degrees}.'
+    'or on occasion {"action":"turn","angle":degrees}.'
 )
 
 
@@ -115,7 +115,7 @@ result = subprocess.Popen(
 
 
 # --- Capture ---
-DEFAULT_SOURCE   = 'orb-slam/vo_videos/vid1.mp4'    # Camera index or file path
+DEFAULT_SOURCE   = '0'    # Camera index or file path
 FRAME_WIDTH      = 360
 FRAME_HEIGHT     = 640
 DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
@@ -736,12 +736,15 @@ def navigate():
         # get steer with obect detection
         direction = get_steer_from_objects(boxes26, depth_uint8, direction)
 
-
+        save_frame = frame.copy() #Copies it for the original frame
         #LLM Handler
-        resized_frame, obj_box_context = llm_processor.preprocess(frame, obj_box_context)
-        llm_context = llm_processor.make_context(args.goal, obj_box_context)
-        accepted = llm_processor.process_frame(frame, context=llm_context)
+        #Should only be able to handle objects
+        resized_frame, obj_box_context = llm_processor.preprocess(save_frame, obj_box_context) #Rescale the frame for the LLM
+        llm_context = llm_processor.make_context(args.goal, obj_box_context) #Formats the context for the LLM so that the LLM can add it to the end of the prompt
+        accepted = llm_processor.process_frame(resized_frame, context=llm_context) #Send the frame to the LLM, if the LLM can query, it will
 
+        #LLM Reciever
+        llm_response = llm_processor.get_result() #Gets the latest LLM result, not necessarily new from the last frame. Format is described in the prompt
 
         #Call combine steer and use what we have currently to determine the final direction
         #if nav.active:
@@ -782,7 +785,7 @@ def navigate():
         #nav.draw(frame)
     
         # display camera frame and depth side by side
-        out = np.hstack([frame, depth_color]) if depth_color is not None else frame
+        out = np.hstack([frame, depth_color,save_frame]) if depth_color is not None else frame
         cv2.imshow('navigator', out)
 
 
