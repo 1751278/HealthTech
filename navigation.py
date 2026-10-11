@@ -37,6 +37,7 @@ from zmq.decorators import socket
 
 from goal_nav import GoalNav, Speaker, VoiceGoal
 from llm_vision import LLMVisionAssistant
+from LLM_Yolo_integration import LLMProcessor
 
 ip_address = "127.0.0.1"
 port1 = "5555"
@@ -78,7 +79,7 @@ GOAL_PROMPT = (
     "You are a visual navigation assistant. Given the current camera image "
     "and YOLO object detections, choose a useful visual target to guide "
     "short-distance movement.\n\n"
-    "Return either a bbox in [x, y, w, h] format, matching one "
+    "Return either a bbox in [x1, y1, x2, y2] format, matching one "
     "of the provided detections, or a turning angle if no suitable target "
     "is available. Choose targets that appear to lead toward open, navigable "
     "space or to the provided destination. Avoid selecting obvious obstacles as "
@@ -86,7 +87,7 @@ GOAL_PROMPT = (
     "For a bbox, return its coordinates in the image's pixel space. "
     "For a turn, use degrees, with negative values meaning left and positive "
     "values meaning right.\n\n"
-    'Output only a JSON object: {"action":"target","bbox":[x,y,w,h]} '
+    'Output only a JSON object: {"action":"target","bbox":[x1,y1,x2,y2]} '
     'or {"action":"turn","angle":degrees}.'
 )
 
@@ -258,6 +259,10 @@ output_details = interpreter.get_output_details()
 
 speaker = Speaker()
 llm = LLMVisionAssistant(provider="gemini", prompt=GOAL_PROMPT).start()   # key from GEMINI_API_KEY
+
+llm_processor = LLMProcessor(llm) #Initialize LLM processor
+
+
 #nav = GoalNav(llm, speaker, sens=STEER_SENSITIVITY_DOOR, blocked_thresh=BLOCKED_THRESHOLD)
 #voice = VoiceGoal(nav.set_goal, speaker)
 #if args.goal:
@@ -738,6 +743,7 @@ def navigate():
         if frame_num % args.yolo_default_interval == 0:
             results26 = yolo26(frame, verbose=False)
             boxes26   = results26[0].boxes
+        print(boxes26.xyxy.cpu().tolist())
         # --- Draw Frame ---
         for i, box in enumerate(boxes26):
             label           = yolo26.names[int(box.cls[0])]

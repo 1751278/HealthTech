@@ -127,9 +127,11 @@ class LLMVisionAssistant:
 
     def _worker_loop(self):
         while not self._stop_flag:
+            # Get the next frame from the queue
             item = self._frame_queue.get()
             if item is None:
                 break
+            # Process the frame, grabbing the necessary information
             frame, context, request_id = item
             with self._state_lock:
                 self._busy = True

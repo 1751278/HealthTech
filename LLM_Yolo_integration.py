@@ -7,7 +7,7 @@ import time
 import cv2
 import numpy as np
 
-#Simplistic (for now) LLM processor for integrating with YOLO detection
+#Simplistic (for now) LLM processor for integrating with YOLO detection, simply runs the llm on a frame
 
 class LLMProcessor:
     def __init__(self, llm):
