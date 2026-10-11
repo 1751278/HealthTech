@@ -19,6 +19,9 @@ class LLMProcessor:
     def stop(self):
         self.llm.stop()
 
+    def make_context(self, Goal, obj_box_context = None):
+        return f"Goal: {Goal}\nDetected object bounding boxes: {obj_box_context}"
+
     def process_frame(self, frame, context=""): #Returns if a frame was accepted
         return self.llm.force_submit(frame, context=context)
 

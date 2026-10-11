@@ -607,6 +607,9 @@ def navigate():
     """
     while True:
         ret, frame = cap.read()
+        obj_box_context = None #Establish this for use in the yolo section
+
+
 
         if not ret:  # end of video file or camera error
             print("Error: Could not read frame from video source.")
@@ -641,21 +644,7 @@ def navigate():
         # --- Depth estimation ---
         if frame_num % args.depth_interval == 0:
             # Disable Depth Anything inference
-            """
-            raw = depth_model.infer_image(frame, DEPTH_INFER_SIZE)  # returns a 2D array of depth values (higher = closer)
 
-            # Normalize raw depth to 0–255 for visualization and smoothing. Add small epsilon to denominator to avoid division by zero.
-            raw_norm = ((raw - raw.min()) / (raw.max() - raw.min() + 1e-6) * 255).astype(np.float32)
-
-            # Apply smoothing
-            if smoothed_depth is None:
-                smoothed_depth = raw_norm
-            else:
-                smoothed_depth = ALPHA * raw_norm + (1 - ALPHA) * smoothed_depth
-
-            # Convert to uint8 for steering algorithm and visualization
-            depth_uint8 = smoothed_depth.astype(np.uint8)
-            """
             depth_map = get_tflite_depth(frame)  # run TFLITE depth estimation
             depth_uint8 = depth_map.astype(np.uint8)
             # raw_steer is the new candidate direction based on current depth map
@@ -700,19 +689,6 @@ def navigate():
             results = yolo(frame, verbose=False)
             boxes   = results[0].boxes
 
-            """
-            # FIX: use get_door_steer to bias committed_steer toward the door when one is visible
-            door_side = get_door_steer(boxes, w, yolo.names)
-            if door_side is not None:
-                if door_side == 'left':
-                    committed_steer = "TURN LEFT <<"
-                elif door_side == 'right':
-                    committed_steer = ">> TURN RIGHT"
-                elif door_side == 'center':
-                    committed_steer = "^ FORWARD"
-                print(f"Door detected on {door_side}, overriding steer to: {committed_steer}")
-            """
-
         # --- Draw Frame ---
         max_conf = 0
         index = -1
@@ -744,7 +720,6 @@ def navigate():
             results26 = yolo26(frame, verbose=False)
             boxes26   = results26[0].boxes
             obj_box_context = boxes26.xyxy.cpu().round().int().tolist() #First, turn all the elements to integers, then convert to list, as it is originally a tensor; therefore, it is easier to work with in my opinion.
-
         # --- Draw Frame ---
         for i, box in enumerate(boxes26):
             label           = yolo26.names[int(box.cls[0])]
