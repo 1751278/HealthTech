@@ -65,7 +65,6 @@ def main():
                 print("Still waiting on the previous request.")
         elif key == ord("q"):
             break
-
         desc = assistant.latest_description()
         if desc != last_shown:
             print("LLM:", desc)

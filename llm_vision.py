@@ -80,7 +80,7 @@ class LLMVisionAssistant:
 
         if provider == "gemini":
             from google import genai
-            self.model = model or "gemini-3.5-flash-lite"
+            self.model = model or "gemini-3.5-flash-lite" #For latest model use "gemini-flash-latest"
             self._client = genai.Client(api_key=api_key or os.environ.get("GEMINI_API_KEY"))
         else:
             raise ValueError(f"Unknown provider: {provider!r} (expected 'openai', 'anthropic', or 'gemini')")
@@ -111,11 +111,13 @@ class LLMVisionAssistant:
     def force_submit(self, frame, context="", request_id=None):
         with self._state_lock:
             if self._busy:
+                print("already busy")
                 return False
         try:
             self._frame_queue.put_nowait((self._preprocess(frame), context, request_id))
             return True
         except queue.Full:
+            print("queue is full")
             return False
 
     def latest_description(self):
@@ -242,6 +244,7 @@ class LLMVisionAssistant:
                 ),
             )
             try:
+                print("description received")
                 return json.loads(response.text)
             except (json.JSONDecodeError, TypeError):
                 return {"hazards": [], "objects": [], "_raw": response.text}
