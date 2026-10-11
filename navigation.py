@@ -137,7 +137,7 @@ audio_state = {
 }
 
 # --- Processing intervals (run every N frames) ---
-DEFAULT_YOLO_INTERVAL  = 3
+DEFAULT_YOLO_INTERVAL  = 1
 DOOR_YOLO_INTERVAL     = 5
 DEFAULT_DEPTH_INTERVAL = 2
 
@@ -714,8 +714,11 @@ def navigate():
             max_conf = door_state["last_door_confidence"]*math.exp(-0.01*(frame_num - door_state["last_seen_frame"])) #If we don't see a door, use the last known confidence to determine how much to trust the last known direction
             #print(max_conf, " On frame: ", frame_num - door_state["last_seen_frame"], " Orignial confidence: ", door_state["last_door_confidence"])
 
+
+
+
         # -- Object Detection using yolo26 for desk and chair avoidance. WIP --
-        #"""
+
         if frame_num % args.yolo_default_interval == 0:
             results26 = yolo26(frame, verbose=False)
             boxes26   = results26[0].boxes
@@ -729,14 +732,18 @@ def navigate():
             if conf26 > OTHER_CONFIDENCE_THRESHOLD:
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)  # draw box
                 cv2.putText(frame, label, (x1, y1 - 5),cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)  # draw label
-        #"""
-        # get steer with obect detection
 
+        # get steer with obect detection
         direction = get_steer_from_objects(boxes26, depth_uint8, direction)
 
+
+        #LLM Handler
+        resized_frame, obj_box_context = llm_processor.preprocess(frame, obj_box_context)
+        llm_context = llm_processor.make_context(args.goal, obj_box_context)
+        accepted = llm_processor.process_frame(frame, context=llm_context)
+
+
         #Call combine steer and use what we have currently to determine the final direction
-
-
         #if nav.active:
             #target_dir, target_conf = nav.steering(w)
         #else:

@@ -101,7 +101,7 @@ class LLMVisionAssistant:
                 print("already busy")
                 return False
         try:
-            self._frame_queue.put_nowait((self._preprocess(frame), context, request_id))
+            self._frame_queue.put_nowait((frame, context, request_id))
             return True
         except queue.Full:
             print("queue is full")
