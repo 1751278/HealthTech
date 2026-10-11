@@ -619,7 +619,7 @@ def navigate():
         # Resize the depth frame
         frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
         h, w  = frame.shape[:2]
-
+        save_frame = frame.copy() #Copies it for the original frame
         md = dict(shape=frame.shape, dtype=str(frame.dtype))
         encoded, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
 
@@ -736,7 +736,7 @@ def navigate():
         # get steer with obect detection
         direction = get_steer_from_objects(boxes26, depth_uint8, direction)
 
-        save_frame = frame.copy() #Copies it for the original frame
+        
         #LLM Handler
         #Should only be able to handle objects
         resized_frame, obj_box_context = llm_processor.preprocess(save_frame, obj_box_context) #Rescale the frame for the LLM
