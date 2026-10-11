@@ -147,15 +147,11 @@ def main():
             traj_canvas = draw_trajectory_canvas(vo.trajectory)
 
             if frame_count % SEND_INTERVAL == 0:
-                print("ABOUT TO SEND", flush=True)
 
                 trajectory_data = np.array(vo.trajectory[-300:], dtype=np.float64) #Only the most recent 300 points, so the message stays a fixed size
 
-                print(f"Trajectory shape: {trajectory_data.shape}, "f"dtype: {trajectory_data.dtype}, "f"bytes: {trajectory_data.nbytes}",flush=True)
-
                 sender.send(trajectory_data.tobytes())
 
-                print("SENT TRAJECTORY", flush=True)
         frame_count += 1
         if not args.no_display:
  

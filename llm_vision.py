@@ -36,20 +36,7 @@ DEFAULT_PROMPT = (
     "rough direction (left/right/ahead) if relevant."
 )
 
-GOAL_PROMPT = (
-    "You are the route planner for a blind person walking indoors. The user's GOAL and sensor notes "
-    "are given below. Choose the next short leg of the route, not the whole route. "
-    "Read any visible sign, room number or label and use it. Restroom signs may show symbols or the "
-    "words restroom, men, women, or WC. "
-    "If the goal itself is visible, target it. "
-    "If it is not, you are exploring: pick a waypoint that leads toward unexplored space, such as a "
-    "doorway, corridor opening, hallway end, or a sign. Never pick furniture, appliances, decor, or "
-    "anything below waist height as a waypoint. "
-    "If no such waypoint is visible, set target_visible=false and give only `heading`. "
-    "Set arrived=true only if the final goal is right in front of the user. "
-    "`instruction` is at most 12 words and is spoken aloud; mention an immediate hazard first. "
-    "Do not mention colors or lighting. Use only 'near' or 'far' for distance."
-)
+
 
 class LLMVisionAssistant:
     def __init__(

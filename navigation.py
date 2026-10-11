@@ -36,7 +36,7 @@ import zmq
 from zmq.decorators import socket
 
 from goal_nav import GoalNav, Speaker, VoiceGoal
-from llm_vision import LLMVisionAssistant, GOAL_PROMPT
+from llm_vision import LLMVisionAssistant
 
 ip_address = "127.0.0.1"
 port1 = "5555"
@@ -72,6 +72,24 @@ from ultralytics import YOLO
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
+
+# --- LLM ---
+GOAL_PROMPT = (
+    "You are a visual navigation assistant. Given the current camera image "
+    "and YOLO object detections, choose a useful visual target to guide "
+    "short-distance movement.\n\n"
+    "Return either a bbox in [x, y, w, h] format, matching one "
+    "of the provided detections, or a turning angle if no suitable target "
+    "is available. Choose targets that appear to lead toward open, navigable "
+    "space or to the provided destination. Avoid selecting obvious obstacles as "
+    "targets. Prefer continuing toward a useful existing target when appropriate.\n\n"
+    "For a bbox, return its coordinates in the image's pixel space. "
+    "For a turn, use degrees, with negative values meaning left and positive "
+    "values meaning right.\n\n"
+    'Output only a JSON object: {"action":"target","bbox":[x,y,w,h]} '
+    'or {"action":"turn","angle":degrees}.'
+)
+
 
 # --- Models ---
 YOLO_MODEL_PATH    = "YoloModels/DoorFrameModel26.pt" # Using the door frame model so we can try and help navigate Users to the door.
@@ -240,10 +258,10 @@ output_details = interpreter.get_output_details()
 
 speaker = Speaker()
 llm = LLMVisionAssistant(provider="gemini", prompt=GOAL_PROMPT).start()   # key from GEMINI_API_KEY
-nav = GoalNav(llm, speaker, sens=STEER_SENSITIVITY_DOOR, blocked_thresh=BLOCKED_THRESHOLD)
-voice = VoiceGoal(nav.set_goal, speaker)
-if args.goal:
-    nav.set_goal(args.goal)
+#nav = GoalNav(llm, speaker, sens=STEER_SENSITIVITY_DOOR, blocked_thresh=BLOCKED_THRESHOLD)
+#voice = VoiceGoal(nav.set_goal, speaker)
+#if args.goal:
+    #nav.set_goal(args.goal)
 
 def get_tflite_depth(frame):
     orig_h, orig_w, _ = frame.shape
@@ -668,8 +686,9 @@ def navigate():
         # --- Goal navigation (before door detection: frame is still clean here) ---
         # Only feed the goal layer once the depth block has actually run, so it
         # never sees unbound/stale `col`.
-        if depth_uint8 is not None:
-            nav.update(frame, depth_uint8, frame_num, latest_traj, col)
+
+        #if depth_uint8 is not None:
+            #nav.update(frame, depth_uint8, frame_num, latest_traj, col)
 
         # --- Door detection ---
         if frame_num % args.yolo_door_interval == 0:
@@ -736,10 +755,11 @@ def navigate():
         #Call combine steer and use what we have currently to determine the final direction
 
 
-        if nav.active:
-            target_dir, target_conf = nav.steering(w)
-        else:                                   # no goal set: old door-seeking behavior
-            target_dir, target_conf = door_direction, max_conf
+        #if nav.active:
+            #target_dir, target_conf = nav.steering(w)
+        #else:
+        target_dir, target_conf = door_direction, max_conf
+
         combined_direction = combine_steer(direction, target_dir, target_conf, col['c'])
 
         #smoothen direction with moving average
@@ -770,8 +790,8 @@ def navigate():
         end_point = (int(math.sin(math.radians(combined_direction)) * 100 + w//2), int(-math.cos(math.radians(combined_direction)) * 100 + h//2))
         cv2.arrowedLine(frame, start_point, end_point, (255, 0, 0), 2)  # draws blue arrow for FINAL direction
 
-        nav.draw(frame)
-
+        #nav.draw(frame)
+    
         # display camera frame and depth side by side
         out = np.hstack([frame, depth_color]) if depth_color is not None else frame
         cv2.imshow('navigator', out)
