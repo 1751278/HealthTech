@@ -743,7 +743,8 @@ def navigate():
         if frame_num % args.yolo_default_interval == 0:
             results26 = yolo26(frame, verbose=False)
             boxes26   = results26[0].boxes
-        print(boxes26.xyxy.cpu().tolist())
+            obj_box_context = boxes26.xyxy.cpu().round().int().tolist() #First, turn all the elements to integers, then convert to list, as it is originally a tensor; therefore, it is easier to work with in my opinion.
+
         # --- Draw Frame ---
         for i, box in enumerate(boxes26):
             label           = yolo26.names[int(box.cls[0])]
