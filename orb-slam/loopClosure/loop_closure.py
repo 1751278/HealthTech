@@ -67,7 +67,7 @@ class LoopClosure:
             self.prev_keyframe = kf
             self.next_keyframe_id += 1
             self._maybe_fit_vlad()
-    def _process_keyframes(self, n_candidates=10, similarity_thresh=0.1):
+    def _process_keyframes(self, n_candidates=3, similarity_thresh=0.1):
             debug_start_time = time.perf_counter()
             current = self.prev_keyframe
             eligible = [kf for kf in self.keyframes if current.id - kf.id >= 50]

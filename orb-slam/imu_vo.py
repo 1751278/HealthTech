@@ -89,7 +89,7 @@ def IMU_READER(stop_signal):
         time.sleep(1) # Allow connection to settle
         print("Connected successfully! Listening for data...")
         # read data from serial port to buffer any data that is corrupt
-        for _ in range(10):
+        for _ in range(5):
             if ser.in_waiting > 0:
                 raw_data = ser.readline()
                 decoded_data = raw_data.decode('utf-8', errors='ignore').strip()
@@ -177,6 +177,7 @@ class MonocularVO:
         # unless an external scale is supplied every frame)
         self.trajectory = [self.cur_t.copy()]
         self.num_inlier_matches = 0
+        self.loop_closure_detected = False  # Placeholder for future loop closure detection
 
     def _end_imu_thread(self):
         """Signal the IMU thread to stop and wait for it to finish."""
@@ -275,7 +276,7 @@ class MonocularVO:
         # constructing cv2.DMatch objects.
         return np.stack([idx0, idx1], axis=1)
     
-    def process_frame(self, frame, scale=1.0):
+    def process_frame(self, frame, frame_count, scale=1.0):
         """
         Processes one frame, updates the accumulated pose, and returns
         (kp, matches) for visualization purposes.
@@ -313,7 +314,7 @@ class MonocularVO:
         if self.num_inlier_matches >= self.min_matches:
             self.cur_t = self.cur_t + scale * (self.cur_R @ t)
 
-            print(np.asarray(self.cur_t, dtype=np.float64).reshape(3))# print 3d position 
+            #print(np.asarray(self.cur_t, dtype=np.float64).reshape(3))# print 3d position 
 
             #self.cur_R = R @ self.cur_R
             self._get_imu_data()
