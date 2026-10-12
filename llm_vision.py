@@ -91,7 +91,7 @@ class LLMVisionAssistant:
 
         # The most recent answer from the AI. Starts out empty so the main
         # loop always has something valid to read, even before the first call.
-        self._description = {"hazards": [], "objects": []}
+        self._description = None
 
         self._busy = False  # True while an API call is in progress
         self._last_call_time = 0.0  # Timestamp of the last call (0 = "a long time ago")

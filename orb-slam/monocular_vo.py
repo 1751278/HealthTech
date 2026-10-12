@@ -163,6 +163,7 @@ class MonocularVO:
 
         self.xfeat = XFeat().to(self.device).eval()
         self.lc = lc(self._match,self.K,"orb", self.device)
+        self.loop_closure_detected = False
 
     @staticmethod
     def to_gray(frame):
@@ -319,6 +320,9 @@ class MonocularVO:
             self.trajectory = traj
             self.cur_R = self.lc.cur_R
             self.cur_t = self.lc.cur_t
+            self.loop_closure_detected = True
+        else:
+            self.loop_closure_detected = False
 
 
         self.prev_gray, self.prev_kp, self.prev_des, self.prev_feats = gray, kp, des, feats

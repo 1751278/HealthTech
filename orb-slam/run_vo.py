@@ -13,7 +13,7 @@ import argparse
 import glob
 import os
 import sys
-
+import json
 
 import zmq
 
@@ -26,7 +26,7 @@ import re
 from monocular_vo import FrameReader as fr #Change this with any vo class provided it has the same methods (Ex: IMU)
 from monocular_vo import MonocularVO as voclass #Change this with any vo class provided it has the same methods (Ex: IMU)
 from accelerated_features.modules.xfeat import XFeat
-
+from scipy.spatial.transform import Rotation as Rot
 
 import numpy as np
 
@@ -102,7 +102,7 @@ with open(CALIBRATION_PATH, "r") as file:
 
 
 FRAME_WINDOW = 1  # Process every Nth frame for VO
-SEND_INTERVAL = 5   # Send trajectory every N frames
+SEND_INTERVAL = 1   # Send trajectory every N frames
 def main():
     parser = argparse.ArgumentParser(description="Monocular Visual Odometry (ORB + Essential matrix)")
     parser.add_argument("--source", default="vo_videos/vid1.mp4",
@@ -147,10 +147,21 @@ def main():
             traj_canvas = draw_trajectory_canvas(vo.trajectory)
 
             if frame_count % SEND_INTERVAL == 0:
+                R_euler = Rot.from_matrix(vo.cur_R)
+                heading_degree = None
+                try:
+                    heading_degree = vo.imu_angle[2]  # Yaw angle from IMU
+                    print("IMU heading:", heading_degree)
+                except Exception as e:
+                    heading_degree = R_euler.as_euler('xyz', degrees=True)[2]  # Yaw angle
+                loop_closure_detected = vo.loop_closure_detected
 
-                trajectory_data = np.array(vo.trajectory[-300:], dtype=np.float64) #Only the most recent 300 points, so the message stays a fixed size
+                trajectory_data = np.array(vo.trajectory[-100:], dtype=np.float64) #Only the most recent 300 points, so the message stays a fixed size
+                vo_data = np.array([heading_degree, loop_closure_detected], dtype=np.float64)
+                send_data = {"trajectory": trajectory_data.tolist(), "vo": vo_data.tolist()} #300 recent points and the last array is [heading_degree, loop_closure_detected, 0]
+                dict_bytes = json.dumps(send_data).encode('utf-8')
 
-                sender.send(trajectory_data.tobytes())
+                sender.send(dict_bytes)
 
         frame_count += 1
         if not args.no_display:

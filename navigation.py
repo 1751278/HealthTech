@@ -19,6 +19,7 @@ import subprocess
 import argparse
 import sys
 import collections
+import time
 import cv2
 import torch
 import numpy as np
@@ -26,6 +27,7 @@ import matplotlib
 import soundfile as sf
 import math
 import tensorflow as tf
+import json
 
 # sounddevice is imported lazily (see _open_audio_stream) because importing it
 # runs PortAudio's Pa_Initialize() at import time, which can block or fail on a
@@ -38,6 +40,7 @@ from zmq.decorators import socket
 from goal_nav import GoalNav, Speaker, VoiceGoal
 from llm_vision import LLMVisionAssistant
 from LLM_Yolo_integration import LLMProcessor
+from action import Action
 
 ip_address = "127.0.0.1"
 port1 = "5555"
@@ -80,10 +83,11 @@ GOAL_PROMPT = (
     "and YOLO object detections, choose a useful visual target to guide "
     "short-distance movement.\n\n"
     "Return either a bbox in [x1, y1, x2, y2] format, matching one "
-    "of the provided detections, or a turning angle if no suitable target "
+    "of the provided detections, or provide your own bbox in the same format, or a turning angle if no suitable target "
     "is available (prefer bboxes over angles). Choose targets that appear to lead toward open, navigable "
-    "space or to the provided destination. Avoid selecting obvious obstacles as "
-    "targets. Prefer continuing toward a useful existing target when appropriate.\n\n"
+    "space or to the provided destination. Targets do not have to directly lead to the destination. "
+    "Targets can still be obstructed by minor obstacles "
+    "because program can avoid using depth map. Prefer continuing toward a useful existing target when appropriate.\n\n"
     "For a bbox, return its coordinates in the image's pixel space. "
     "For a turn, use degrees, with negative values meaning left and positive "
     "values meaning right.\n\n"
@@ -115,7 +119,7 @@ result = subprocess.Popen(
 
 
 # --- Capture ---
-DEFAULT_SOURCE   = '0'    # Camera index or file path
+DEFAULT_SOURCE   = '1'    # Camera index or file path
 FRAME_WIDTH      = 360
 FRAME_HEIGHT     = 640
 DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
@@ -261,6 +265,9 @@ speaker = Speaker()
 llm = LLMVisionAssistant(provider="gemini", prompt=GOAL_PROMPT).start()   # key from GEMINI_API_KEY
 
 llm_processor = LLMProcessor(llm) #Initialize LLM processor
+
+## --- Action Handler ---
+act = Action()
 
 
 #nav = GoalNav(llm, speaker, sens=STEER_SENSITIVITY_DOOR, blocked_thresh=BLOCKED_THRESHOLD)
@@ -605,6 +612,10 @@ def navigate():
     both the raw camera feed and the depth colormap side by side.
     Pressing 'q' exits the loop and releases the camera.
     """
+    heading_degrees = 0
+    vo_loop_closure_detected = False
+    combined_direction = 0
+    time.sleep(5) # give time for vo to start up and send the first trajectory
     while True:
         ret, frame = cap.read()
         obj_box_context = None #Establish this for use in the yolo section
@@ -629,17 +640,19 @@ def navigate():
                 # Socket is ready; send without blocking
                 sender.send(buffer.tobytes())
         #Check for feedback
-        socks = dict(poller_recv.poll(timeout=0))
+        socks = dict(poller_recv.poll(timeout=0.1))
         if socks.get(receiver): #Probably working
             feedback_msg = receiver.recv()
 
-            trajectory = np.frombuffer( #Reconstruct back to a shape of (N, 3, 1) where N is the number of frames in the trajectory
-                feedback_msg,
-                dtype=np.float64
-            ).reshape(-1, 3, 1)
+            data = json.loads(feedback_msg.decode('utf-8'))
+            #Data from vo processing
+            trajectory = np.array(data['trajectory'], dtype=np.float32)
 
-            latest_traj = trajectory
-            print("Received trajectory:", trajectory.shape)
+
+            latest_traj = trajectory[-1]
+            #print("Received trajectory:", trajectory.shape)
+            heading_degrees = data['vo'][0]
+            loop_closure_detected = data['vo'][1]
 
         # --- Depth estimation ---
         if frame_num % args.depth_interval == 0:
@@ -688,6 +701,7 @@ def navigate():
         if frame_num % args.yolo_door_interval == 0:
             results = yolo(frame, verbose=False)
             boxes   = results[0].boxes
+            obj_box_context_door = boxes.xyxy.cpu().round().int().tolist()
 
         # --- Draw Frame ---
         max_conf = 0
@@ -722,7 +736,7 @@ def navigate():
         if frame_num % args.yolo_default_interval == 0:
             results26 = yolo26(frame, verbose=False)
             boxes26   = results26[0].boxes
-            obj_box_context = boxes26.xyxy.cpu().round().int().tolist() #First, turn all the elements to integers, then convert to list, as it is originally a tensor; therefore, it is easier to work with in my opinion.
+            obj_box_context_26 = boxes26.xyxy.cpu().round().int().tolist() #First, turn all the elements to integers, then convert to list, as it is originally a tensor; therefore, it is easier to work with in my opinion.
         # --- Draw Frame ---
         for i, box in enumerate(boxes26):
             label           = yolo26.names[int(box.cls[0])]
@@ -735,24 +749,28 @@ def navigate():
 
         # get steer with obect detection
         direction = get_steer_from_objects(boxes26, depth_uint8, direction)
+        obj_box_context = obj_box_context_26.extend(obj_box_context_door) if obj_box_context_door is not None else obj_box_context_26
 
-        
-        #LLM Handler
-        #Should only be able to handle objects
-        resized_frame, obj_box_context = llm_processor.preprocess(save_frame, obj_box_context) #Rescale the frame for the LLM
-        llm_context = llm_processor.make_context(args.goal, obj_box_context) #Formats the context for the LLM so that the LLM can add it to the end of the prompt
-        accepted = llm_processor.process_frame(resized_frame, context=llm_context) #Send the frame to the LLM, if the LLM can query, it will
+        if act.get_action_state() != "in_progress":
+            #LLM Handler
+            #Should only be able to handle objects
+            if not llm.is_busy():
+                resized_frame, obj_box_context = llm_processor.preprocess(save_frame, obj_box_context) #Rescale the frame for the LLM
+                llm_context = llm_processor.make_context(args.goal, obj_box_context) #Formats the context for the LLM so that the LLM can add it to the end of the prompt
+                accepted = llm_processor.process_frame(resized_frame, context=llm_context) #Send the frame to the LLM, if the LLM can query, it will
+            while llm.is_busy():# wait for the LLM to finish processing to get result
+                audio_state["left_vol"] = 0.0
+                audio_state["right_vol"] = 0.0
+            time.sleep(0.1) #Sleep for a bit 
+            #LLM Reciever
+            llm_response = llm_processor.get_result() #Gets the latest LLM result, not necessarily new from the last frame. Format is described in the prompt
+            if llm_response is not None:
+                act.update_action(llm_response, heading_degrees) #Updates the action state based on the LLM response
+        if act.get_action_state() == "in_progress":
+            combined_direction = act.get_update_dir(frame, heading_degrees)
 
-        #LLM Reciever
-        llm_response = llm_processor.get_result() #Gets the latest LLM result, not necessarily new from the last frame. Format is described in the prompt
-
-        #Call combine steer and use what we have currently to determine the final direction
-        #if nav.active:
-            #target_dir, target_conf = nav.steering(w)
-        #else:
         target_dir, target_conf = door_direction, max_conf
-
-        combined_direction = combine_steer(direction, target_dir, target_conf, col['c'])
+        #combined_direction = combine_steer(direction, target_dir, target_conf, col['c'])
 
         #smoothen direction with moving average
         direction_history[:-1] = direction_history[1:]
