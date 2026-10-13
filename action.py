@@ -21,11 +21,12 @@ class Action:
             self.tracker = cv2.TrackerCSRT_create()
     
     def speak_worker(self, text):
-        self.voice = pyttsx3.init()
-        self.voice.setProperty('rate', 150)    # Speed of speech (words per minute)
-        self.voice.setProperty('volume', 1.0)       
-        self.voice.say(text)
-        self.voice.runAndWait()
+        voice = pyttsx3.init()
+        voice.setProperty('rate', 150)    # Speed of speech (words per minute)
+        voice.setProperty('volume', 1.0)       
+        voice.say(text)
+        voice.runAndWait()
+        return
 
     def speak_non_blocking(self, text):
         """Starts a new thread to speak without blocking the main program."""
