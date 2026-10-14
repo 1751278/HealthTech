@@ -126,7 +126,7 @@ def main():
 
     reader = fr(args.source)
     vo = voclass(K, n_features=args.n_features)
-        
+
     frame_count = 0
     old_frame = None
     while True:
@@ -203,11 +203,6 @@ finally:
     sender.close()
     reciever.close()
     ctx.term()
-    try:
-        vo._end_imu_thread()
-    except Exception as e:
-        pass
-    
 
 
 
