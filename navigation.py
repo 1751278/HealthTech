@@ -751,8 +751,7 @@ def navigate():
         direction = get_steer_from_objects(boxes26, depth_uint8, direction)
         
         obj_box_context_26.extend(obj_box_context_door) if obj_box_context_door is not None else obj_box_context_26
-        if cv2.waitKey(1) & 0xFF == ord('s'):
-            act.action_state = "done"
+
         if act.get_action_state() != "in_progress":
             
             #LLM Handler
@@ -821,6 +820,8 @@ def navigate():
             break
         elif key == ord('g'):
             voice.listen_async()     # push-to-talk; saying "stop" cancels the goal
+        elif key == ord('s'):
+            act.action_state = "done"
 
         # Increment frame counter
         frame_num += 1
