@@ -83,7 +83,7 @@ GOAL_PROMPT = (
     "and YOLO object detections, choose a useful visual target to guide "
     "short-distance movement.\n\n"
     "Return either a bbox in [x1, y1, x2, y2] format, matching one "
-    "of the provided detections, or provide your own bbox in the same format, or a turning angle if no suitable target "
+    "of the provided detections, DO NOT CREATE ANY BBOXES YOURSELF, or a turning angle if no suitable target "
     "is available (prefer bboxes over angles). Choose targets that appear to lead toward open, navigable "
     "space or to the provided destination. Targets do not have to directly lead to the destination. "
     "Targets can still be obstructed by minor obstacles "
@@ -142,7 +142,7 @@ audio_state = {
 
 # --- Processing intervals (run every N frames) ---
 DEFAULT_YOLO_INTERVAL  = 1
-DOOR_YOLO_INTERVAL     = 5
+DOOR_YOLO_INTERVAL     = 1
 DEFAULT_DEPTH_INTERVAL = 2
 
 
@@ -749,14 +749,18 @@ def navigate():
 
         # get steer with obect detection
         direction = get_steer_from_objects(boxes26, depth_uint8, direction)
-        obj_box_context = obj_box_context_26.extend(obj_box_context_door) if obj_box_context_door is not None else obj_box_context_26
-
+        
+        obj_box_context_26.extend(obj_box_context_door) if obj_box_context_door is not None else obj_box_context_26
+        if cv2.waitKey(1) & 0xFF == ord('s'):
+            act.action_state = "done"
         if act.get_action_state() != "in_progress":
+            
             #LLM Handler
             #Should only be able to handle objects
             if not llm.is_busy():
-                resized_frame, obj_box_context = llm_processor.preprocess(save_frame, obj_box_context) #Rescale the frame for the LLM
-                llm_context = llm_processor.make_context(args.goal, obj_box_context) #Formats the context for the LLM so that the LLM can add it to the end of the prompt
+                print(obj_box_context_26)
+                resized_frame, obj_box_context_26 = llm_processor.preprocess(save_frame, obj_box_context_26) #Rescale the frame for the LLM
+                llm_context = llm_processor.make_context(args.goal, obj_box_context_26) #Formats the context for the LLM so that the LLM can add it to the end of the prompt
                 accepted = llm_processor.process_frame(resized_frame, context=llm_context) #Send the frame to the LLM, if the LLM can query, it will
             while llm.is_busy():# wait for the LLM to finish processing to get result
                 audio_state["left_vol"] = 0.0
@@ -767,6 +771,7 @@ def navigate():
             if llm_response is not None:
                 act.update_action(llm_response, heading_degrees) #Updates the action state based on the LLM response
         if act.get_action_state() == "in_progress":
+            
             combined_direction = act.get_update_dir(frame, heading_degrees)
 
         target_dir, target_conf = door_direction, max_conf
@@ -776,6 +781,7 @@ def navigate():
         direction_history[:-1] = direction_history[1:]
         direction_history[-1] = combined_direction
         directionArray = direction_history * direction_smoothen
+        
         smooth_direction = np.sum(directionArray)
         ### Direction should be finalized at this point
 
