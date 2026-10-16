@@ -142,7 +142,7 @@ audio_state = {
 
 # --- Processing intervals (run every N frames) ---
 DEFAULT_YOLO_INTERVAL  = 1
-DOOR_YOLO_INTERVAL     = 5
+DOOR_YOLO_INTERVAL     = 1
 DEFAULT_DEPTH_INTERVAL = 2
 
 
@@ -820,6 +820,7 @@ def navigate():
             voice.listen_async()     # push-to-talk; saying "stop" cancels the goal
         elif key == ord('s'):
             start_llm = True
+            act.action_state = "done" #Reset the action state so that the LLM can start processing again
 
         # Increment frame counter
         frame_num += 1
