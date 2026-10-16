@@ -275,7 +275,40 @@ class MonocularVO:
         # Store matches as raw (N, 2) descriptor-index pairs instead of
         # constructing cv2.DMatch objects.
         return np.stack([idx0, idx1], axis=1)
-    
+        
+    def _convert_cv2_to_xfeat(self, cv_kpts, cv_descs, device="cpu"):
+        """
+        Converts OpenCV keypoints and descriptors to the XFeat dictionary format.
+        """
+        if not cv_kpts or cv_descs is None or len(cv_kpts) == 0:
+            return {
+                "keypoints": torch.empty((0, 2), dtype=torch.float32, device=device),
+                "scores": torch.empty((0,), dtype=torch.float32, device=device),
+                "descriptors": torch.empty((0, cv_descs.shape[1] if cv_descs is not None else 64), dtype=torch.float32, device=device)
+            }
+
+        # 1. Extract (x, y) coordinates from cv2.KeyPoint objects
+        kpts_list = [kp.pt for kp in cv_kpts]
+        xfeat_kpts = torch.tensor(kpts_list, dtype=torch.float32, device=device)
+
+        # 2. Extract responses/scores from cv2.KeyPoint objects
+        scores_list = [kp.response for kp in cv_kpts]
+        xfeat_scores = torch.tensor(scores_list, dtype=torch.float32, device=device)
+
+        # 3. Convert descriptors NumPy array to PyTorch Tensor
+        # Ensure descriptors are float32 (ORB might be uint8, convert if needed)
+        if cv_descs.dtype == np.uint8:
+            cv_descs = cv_descs.astype(np.float32)
+            
+        xfeat_descs = torch.from_numpy(cv_descs).to(device=device, dtype=torch.float32)
+
+        # Return the exact dictionary structure XFeat creates
+        return {
+            "keypoints": xfeat_kpts,      # Shape: (N, 2)
+            "scores": xfeat_scores,        # Shape: (N,)
+            "descriptors": xfeat_descs     # Shape: (N, D)
+            }
+        
     def process_frame(self, frame, frame_count, scale=1.0):
         """
         Processes one frame, updates the accumulated pose, and returns
@@ -284,6 +317,13 @@ class MonocularVO:
         
         gray = self.to_gray(frame)
         kp, des = self._detect(gray)
+
+        xFeat_format = self._convert_cv2_to_xfeat(kp, des)
+        kp_full = xFeat_format['keypoints'].cpu().numpy()
+        feats_full = xFeat_format['descriptors'].cpu().numpy()
+
+        feats = feats_full[: self.n_features]
+        kp_np = kp_full[: self.n_features]
 
         if self.prev_gray is None:
             self.prev_gray, self.prev_kp, self.prev_des = gray, kp, des
@@ -314,13 +354,27 @@ class MonocularVO:
         if self.num_inlier_matches >= self.min_matches:
             self.cur_t = self.cur_t + scale * (self.cur_R @ t)
 
-            #print(np.asarray(self.cur_t, dtype=np.float64).reshape(3))# print 3d position 
+            print(np.asarray(self.cur_t, dtype=np.float64).reshape(3))# print 3d position 
 
             #self.cur_R = R @ self.cur_R
             self._get_imu_data()
             self.cur_R = self._convert_to_R(self.imu_angle)# from imu
             self.trajectory.append(self.cur_t.copy())
 
+        # Record the pose on every frame, including frames where the pose
+        # update was rejected. This keeps trajectory length 1:1 with frames.
+        self.trajectory.append(self.cur_t.copy())
+
+        traj = self.lc.process_loop_check(self.cur_R, self.cur_t, frame_count, kp_full, feats_full, kp, des, self.trajectory)
+
+        if traj:
+            self.trajectory = traj
+            self.cur_R = self.lc.cur_R
+            self.cur_t = self.lc.cur_t
+            self.loop_closure_detected = True
+        else:
+            self.loop_closure_detected = False
+            
         self.prev_gray, self.prev_kp, self.prev_des = gray, kp, des
         return kp, matches
 
