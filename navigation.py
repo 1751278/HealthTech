@@ -768,7 +768,7 @@ def navigate():
             #LLM Reciever
             llm_response = llm_processor.get_result() #Gets the latest LLM result, not necessarily new from the last frame. Format is described in the prompt
             if llm_response is not None:
-                act.update_action(llm_response, heading_degrees) #Updates the action state based on the LLM response
+                act.update_action(llm_response, heading_degrees, llm_processor.max_size) #Updates the action state based on the LLM response
         if act.get_action_state() == "in_progress":
             
             combined_direction = act.get_update_dir(frame, heading_degrees)

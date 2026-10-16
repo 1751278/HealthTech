@@ -15,6 +15,7 @@ class LLMProcessor:
         self.last_call_time = time.time()
         self.min_seconds_between_calls = 5  # Adjust this value as needed
         self.max_size = max_size #Max size for the longer dimension
+        
     def start(self):
         self.llm.start()
 

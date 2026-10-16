@@ -24,7 +24,7 @@ class Action:
         thread = threading.Thread(target=self.speak_worker, args=(text,), daemon=True)
         thread.start()
 
-    def update_action(self, llm_dict, heading_degrees):
+    def update_action(self, llm_dict, heading_degrees, max_size):
         self.llm_dict = llm_dict
         self.action_type = llm_dict["action"]
         self.starting_heading_degrees = heading_degrees
@@ -34,6 +34,7 @@ class Action:
         if self.action_type == "turn":
             pass
             #self.speak_non_blocking(f"Turning {llm_dict['angle']} degrees.")
+        self.max_size = max_size #max size of frame for llm
 
     def turn(self):
         #Determine the direction to turn based on the heading_degrees and the action specified in llm_dict
