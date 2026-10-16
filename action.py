@@ -46,7 +46,11 @@ class Action:
         if self.action_type == "target":
             self.bounding_box = llm_dict["bbox"]
             self.bounding_box_tracker = (self.bounding_box[0], self.bounding_box[1], self.bounding_box[2]-self.bounding_box[0], self.bounding_box[3]-self.bounding_box[1])  # Convert to (x, y, w, h)
+            self.tracker.init(frame, self.bounding_box_tracker)        
 
+    def turn(self):
+        #Determine the direction to turn based on the heading_degrees and the action specified in llm_dict
+        target_direction = self.starting_heading_degrees + self.llm_dict["angle"]
         turn_error = target_direction - self.heading_degrees
         #print(turn_error)
         if abs(turn_error)%360 < 8:  # If the error is less than 8 degrees, consider it done
