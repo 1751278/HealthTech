@@ -151,9 +151,9 @@ def main():
                 heading_degree = None
                 try:
                     heading_degree = vo.imu_angle[2]  # Yaw angle from IMU
-                    print("IMU heading:", heading_degree)
+                    #print("IMU heading:", heading_degree)
                 except Exception as e:
-                    heading_degree = R_euler.as_euler('xyz', degrees=True)[2]  # Yaw angle
+                    heading_degree = R_euler.as_euler('xzy', degrees=True)[2]  # Yaw angle
                 loop_closure_detected = vo.loop_closure_detected
 
                 trajectory_data = np.array(vo.trajectory[-100:], dtype=np.float64) #Only the most recent 300 points, so the message stays a fixed size

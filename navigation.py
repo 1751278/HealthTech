@@ -82,8 +82,8 @@ GOAL_PROMPT = (
     "You are a visual navigation assistant. Given the current camera image "
     "and YOLO object detections, choose a useful visual target to guide "
     "short-distance movement.\n\n"
-    "Return either a bbox in [x1, y1, x2, y2] format, matching one "
-    "of the provided detections, or provide your own bbox in the same format, or a turning angle if no suitable target "
+    "Return either a bbox in [x1, y1, x2, y2] format, MATCHING one "
+    "of the PROVIDED bbox detections, or a turning angle if no suitable target "
     "is available (prefer bboxes over angles). You should only return a turn angle if there is nothing to track or it is a dead end. "
     "Choose targets that appear to lead toward open, navigable space or to the provided destination."
     "Targets can still be obstructed by minor obstacles "
@@ -654,6 +654,7 @@ def navigate():
             latest_traj = trajectory[-1]
             #print("Received trajectory:", trajectory.shape)
             heading_degrees = data['vo'][0]
+            #print(heading_degrees)
             loop_closure_detected = data['vo'][1]
 
         # --- Depth estimation ---
@@ -751,13 +752,15 @@ def navigate():
 
         # get steer with obect detection
         direction = get_steer_from_objects(boxes26, depth_uint8, direction)
-        obj_box_context = obj_box_context_26#.extend(obj_box_context_door) if obj_box_context_door is not None else obj_box_context_26
+
+        obj_box_context_26.extend(obj_box_context_door) if obj_box_context_door is not None else obj_box_context_26
 
         if act.get_action_state() != "in_progress" and start_llm:
             #LLM Handler
             #Should only be able to handle objects
             if not llm.is_busy() and start_llm:
-                resized_frame, obj_box_context = llm_processor.preprocess(save_frame, obj_box_context) #Rescale the frame for the LLM
+                resized_frame, obj_box_context = llm_processor.preprocess(save_frame, obj_box_context_door) #Rescale the frame for the LLM
+                print(obj_box_context)
                 llm_context = llm_processor.make_context(args.goal, obj_box_context) #Formats the context for the LLM so that the LLM can add it to the end of the prompt
                 accepted = llm_processor.process_frame(resized_frame, context=llm_context) #Send the frame to the LLM, if the LLM can query, it will
             while llm.is_busy():# wait for the LLM to finish processing to get result
@@ -767,9 +770,11 @@ def navigate():
             #LLM Reciever
             llm_response = llm_processor.get_result() #Gets the latest LLM result, not necessarily new from the last frame. Format is described in the prompt
             if llm_response is not None:
-                act.update_action(llm_response, heading_degrees, frame) #Updates the action state based on the LLM response
+                print(obj_box_context_26)
+                act.update_action(llm_response, heading_degrees, frame, llm_processor.max_size, llm_processor.xyxy_rescale) #Updates the action state based on the LLM response
         if act.get_action_state() == "in_progress":
             track_bbox, combined_direction = act.get_update_dir(frame, heading_degrees)
+            print(track_bbox)
             cv2.rectangle(frame, (track_bbox[0], track_bbox[1]), (track_bbox[2], track_bbox[3]), (255, 255, 0), 2)  # draw box
 
         target_dir, target_conf = door_direction, max_conf

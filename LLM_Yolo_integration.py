@@ -26,12 +26,13 @@ class LLMProcessor:
         # Perform any necessary preprocessing on the frame and context
         h, w = frame.shape[:2]
         scale = self.max_size / max(h, w) # Determine scaling factor
-        if scale < 1.0:
-            frame = cv2.resize(frame, (int(w * scale), int(h * scale)))
-            if obj_box_context:
-                #rescale the object bounding boxes
-                obj_box_context = [self.xyxy_rescale(x1, y1, x2, y2, scale) for x1, y1, x2, y2 in obj_box_context]
-        return frame, obj_box_context
+        resized_frame = cv2.resize(frame, (int(w * scale), int(h * scale)))
+        resized_bboxes = []
+        if obj_box_context:
+            #rescale the object bounding boxes
+            for bbox in obj_box_context:
+                resized_bboxes.append(self.xyxy_rescale(bbox[0], bbox[1], bbox[2], bbox[3], scale))
+        return resized_frame, resized_bboxes
 
     def get_result(self): #Return the latest LLM result as a dictionary.
         return self.llm.latest_description()
@@ -40,7 +41,7 @@ class LLMProcessor:
         return [int(coord * scale) for coord in [x1, y1, x2, y2]]
     
     def make_context(self, Goal, obj_box_context = None): #Returns the context string to be used later
-        return f"Goal: {Goal}\nDetected object bounding boxes: {obj_box_context}"
+        return f"Goal: {Goal}\nDetected object bounding boxes: {obj_box_context} (choose [x1, y1, x2, y2] bbox inside list)"
     
     def evaluate(self, frame, context=""): #Determine if a frame should be processed, more complicated functionality should come later, for now it is just time based.
         if time.time() - self.last_call_time < self.min_seconds_between_calls:

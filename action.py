@@ -33,7 +33,7 @@ class Action:
         thread = threading.Thread(target=self.speak_worker, args=(text,), daemon=True)
         thread.start()
 
-    def update_action(self, llm_dict, heading_degrees, frame):
+    def update_action(self, llm_dict, heading_degrees, frame, max_size, resize_func):
         self.llm_dict = llm_dict
         self.action_type = llm_dict["action"]
         self.starting_heading_degrees = heading_degrees
@@ -43,10 +43,18 @@ class Action:
         if self.action_type == "turn":
             pass
             #self.speak_non_blocking(f"Turning {llm_dict['angle']} degrees.")
+
+        self.max_size = max_size  # Store the max_size for later use in tracking   
+        self.resize_func = resize_func  # Store the resize function for later use in tracking 
+        h, w = frame.shape[:2]
+        self.scale_back = max(h, w)/self.max_size
         if self.action_type == "target":
             self.bounding_box = llm_dict["bbox"]
+            self.bounding_box = self.resize_func(self.bounding_box[0], self.bounding_box[1], 
+                                                 self.bounding_box[2], self.bounding_box[3], self.scale_back)
+            print(self.bounding_box)
             self.bounding_box_tracker = (self.bounding_box[0], self.bounding_box[1], self.bounding_box[2]-self.bounding_box[0], self.bounding_box[3]-self.bounding_box[1])  # Convert to (x, y, w, h)
-            self.tracker.init(frame, self.bounding_box_tracker)        
+            self.tracker.init(frame, self.bounding_box_tracker)    
 
     def turn(self):
         #Determine the direction to turn based on the heading_degrees and the action specified in llm_dict
@@ -63,8 +71,9 @@ class Action:
     def track(self, frame):
         #track object and go to object based on bounding box
         success, bbox = self.tracker.update(frame)
+        bbox = self.resize_func(bbox[0], bbox[1], bbox[0]+bbox[2], bbox[1]+bbox[3], self.scale_back)
         if success:
-            bbox_center = (int(bbox[0] + bbox[2] / 2), int(bbox[1] + bbox[3] / 2))
+            bbox_center = (int((bbox[0] + bbox[2]) / 2), int((bbox[1] + bbox[3]) / 2))
             frame_center = (frame.shape[1] // 2, frame.shape[0] // 2)
             direction_error = bbox_center[0] - frame_center[0]
             return bbox, direction_error
@@ -90,7 +99,7 @@ class Action:
                 return [0,0,0,0], max(-90, min(90, turn_angle))
             if self.action_type == "target":
                 bbox, direction_error = self.track(frame)
-                bbox_cv2 = [int(bbox[0]), int(bbox[1]), int(bbox[0]+bbox[2]), int(bbox[1]+bbox[3])]  # Convert to [x1, y1, x2, y2] format
+                bbox_cv2 = bbox #[int(bbox[0]), int(bbox[1]), int(bbox[0]+bbox[2]), int(bbox[1]+bbox[3])]  # Convert to [x1, y1, x2, y2] format
                 return bbox_cv2, max(-90, min(90, direction_error))
 
         

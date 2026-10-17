@@ -365,7 +365,7 @@ class MonocularVO:
         # update was rejected. This keeps trajectory length 1:1 with frames.
         self.trajectory.append(self.cur_t.copy())
 
-        traj = self.lc.process_loop_check(self.cur_R, self.cur_t, frame_count, kp_full, feats_full, kp, des, self.trajectory)
+        traj = None#self.lc.process_loop_check(self.cur_R, self.cur_t, frame_count, kp_full, feats_full, kp, des, self.trajectory)
 
         if traj:
             self.trajectory = traj
