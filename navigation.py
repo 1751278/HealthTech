@@ -774,7 +774,6 @@ def navigate():
                 act.update_action(llm_response, heading_degrees, frame, llm_processor.max_size, llm_processor.xyxy_rescale) #Updates the action state based on the LLM response
         if act.get_action_state() == "in_progress":
             track_bbox, combined_direction = act.get_update_dir(frame, heading_degrees)
-            print(track_bbox)
             cv2.rectangle(frame, (track_bbox[0], track_bbox[1]), (track_bbox[2], track_bbox[3]), (255, 255, 0), 2)  # draw box
 
         target_dir, target_conf = door_direction, max_conf

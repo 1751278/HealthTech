@@ -285,6 +285,7 @@ class LLMVisionAssistant:
             image_bytes = base64.b64decode(b64)
             # Add any extra context to the end of the prompt (blank line in between)
             prompt = self.prompt + ("\n\n" + context if context else "")
+            print(prompt)
             # The "schema" is a template that forces the AI to reply in an exact
             # JSON shape, instead of free-form text. That makes the answer easy
             # for our code to read and use.
@@ -307,7 +308,11 @@ class LLMVisionAssistant:
                     "reasoning": {
                         "type": "String",
                         "description": "The reasoning behind the selected action.",
-                    }
+                    },
+                    "context": {
+                        "type": "String",
+                        "description": "Provide a brief description of the whole picture, note key features and interest points. Keep it short and concise. Conclude with either the angle you are turning, or the bbox that you picked",
+                    },
                 },
             }
             # NOTE: this schema asks for action/bbox/angle/reasoning, but the
