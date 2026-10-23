@@ -119,7 +119,7 @@ result = subprocess.Popen(
 
 
 # --- Capture ---
-DEFAULT_SOURCE   = '1'    # Camera index or file path
+DEFAULT_SOURCE   = '0'    # Camera index or file path
 FRAME_WIDTH      = 360
 FRAME_HEIGHT     = 640
 DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
@@ -448,14 +448,6 @@ def get_better_steer(depth_uint8):
             direction -= forward_prob * const_foward#If center blocked, go more right based on how blocked it is.
 
     direction = max(-90, min(90, direction))  # clamp to [-90, 90]
-
-    if direction > 0:
-        audio_state["left_vol"] = 0.0
-        audio_state["right_vol"] = abs(direction)/90.0 # scale volume by how strong the turn is
-    else:
-        audio_state["right_vol"] = 0.0
-        audio_state["left_vol"] = abs(direction)/90.0 # scale volume by how strong the turn is
-
     #print(f"Direction: {direction:.1f} degrees Forward Prob: {forward_prob:.1f}")
     return direction
 # function for non-blocking audio playback using sounddevice's callback mechanism

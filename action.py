@@ -1,6 +1,7 @@
 import threading
 import time
-import pyttsx3
+import sounddevice as sd
+import soundfile as sf
 from ultralytics import engine
 import cv2
 
@@ -20,17 +21,15 @@ class Action:
         except AttributeError:
             self.tracker = cv2.TrackerCSRT_create()
     
-    def speak_worker(self, text):
-        voice = pyttsx3.init()
-        voice.setProperty('rate', 150)    # Speed of speech (words per minute)
-        voice.setProperty('volume', 1.0)       
-        voice.say(text)
-        voice.runAndWait()
+    def speak_worker(self, file):
+        data, fs = sf.read(file)
+        sd.play(data, fs)
+        sd.wait()
         return
 
-    def speak_non_blocking(self, text):
+    def speak_non_blocking(self, file):
         """Starts a new thread to speak without blocking the main program."""
-        thread = threading.Thread(target=self.speak_worker, args=(text,), daemon=True)
+        thread = threading.Thread(target=self.speak_worker, args=(file,), daemon=True)
         thread.start()
 
     def update_action(self, llm_dict, heading_degrees, frame, max_size, resize_func):
@@ -41,14 +40,14 @@ class Action:
         self.start_time = None
         self.action_state = "in_progress"  # Reset action state when updating
         if self.action_type == "turn":
-            pass
-            #self.speak_non_blocking(f"Turning {llm_dict['angle']} degrees.")
+            self.speak_non_blocking("SoundAssets/turn.mp3")
 
         self.max_size = max_size  # Store the max_size for later use in tracking   
         self.resize_func = resize_func  # Store the resize function for later use in tracking 
         h, w = frame.shape[:2]
         self.scale_back = max(h, w)/self.max_size
         if self.action_type == "target":
+            self.speak_non_blocking("SoundAssets/go_to_target.mp3")
             self.bounding_box = llm_dict["bbox"]
             self.bounding_box = self.resize_func(self.bounding_box[0], self.bounding_box[1], 
                                                  self.bounding_box[2], self.bounding_box[3], self.scale_back)
