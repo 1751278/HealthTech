@@ -692,6 +692,7 @@ def navigate():
         #if depth_uint8 is not None:
             #nav.update(frame, depth_uint8, frame_num, latest_traj, col)
 
+        labels_door = []
         # --- Door detection ---
         if frame_num % args.yolo_door_interval == 0:
             results = yolo(frame, verbose=False)
@@ -704,6 +705,7 @@ def navigate():
         #Pick the best door (highest confidence) and use that to steer toward the door
         for i, box in enumerate(boxes):
             label           = yolo.names[int(box.cls[0])]
+            labels_door.append(label)
             x1, y1, x2, y2 = map(int, box.xyxy[0])  # bounding box coordinates
             color           = BOX_COLOR_DOOR
             conf = box.conf.item()
@@ -726,8 +728,8 @@ def navigate():
 
 
 
-        # -- Object Detection using yolo26 for desk and chair avoidance. WIP --
-
+        # -- Object Detection using yolo26 for desk and chair avoidance. --
+        labels_object = []
         if frame_num % args.yolo_default_interval == 0:
             results26 = yolo26(frame, verbose=False)
             boxes26   = results26[0].boxes
@@ -735,6 +737,7 @@ def navigate():
         # --- Draw Frame ---
         for i, box in enumerate(boxes26):
             label           = yolo26.names[int(box.cls[0])]
+            labels_object.append(label)
             x1, y1, x2, y2 = map(int, box.xyxy[0])  # bounding box coordinates
             color           = BOX_COLOR_OTHER
             conf26 = box.conf.item()
@@ -744,7 +747,7 @@ def navigate():
 
         # get steer with obect detection
         direction = get_steer_from_objects(boxes26, depth_uint8, direction)
-
+        labels_object.extend(labels_door) if labels_door is not None else labels_object
         obj_box_context_26.extend(obj_box_context_door) if obj_box_context_door is not None else obj_box_context_26
 
         if act.get_action_state() != "in_progress" and start_llm:
@@ -752,7 +755,7 @@ def navigate():
             #Should only be able to handle objects
             if not llm.is_busy() and start_llm:
                 resized_frame, obj_box_context = llm_processor.preprocess(save_frame, obj_box_context_door) #Rescale the frame for the LLM
-                print(obj_box_context)
+                print("Length of obj_box_context:", len(obj_box_context), "Length of obj_box_context_26:", len(obj_box_context_26))
                 llm_context = llm_processor.make_context(args.goal, obj_box_context) #Formats the context for the LLM so that the LLM can add it to the end of the prompt
                 accepted = llm_processor.process_frame(resized_frame, context=llm_context) #Send the frame to the LLM, if the LLM can query, it will
             while llm.is_busy():# wait for the LLM to finish processing to get result

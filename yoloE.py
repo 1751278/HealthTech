@@ -11,7 +11,7 @@ target_classes = ["open floor", "stairs", "door", "doorway"]
 model.set_classes(target_classes)
 
 # 3. Initialize the webcam (0 is usually the default camera)
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 
 if not cap.isOpened():
     print("Error: Could not open webcam.")

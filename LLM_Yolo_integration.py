@@ -69,7 +69,7 @@ class LLMProcessor:
         return self.last_response
 
     def _make_larger_context(self): #Create a larger context string from past context points
-        larger_context = "Here is a list of past LLM queries and their respective decisions, in order from oldest to newest:\n"
+        larger_context = "Here is a list of past LLM queries and their respective decisions, in order from oldest to newest. EXPECT A GREAT DEAL OF CHANGE BETWEEN QUERIES AS THE USER HAS MOVED:\n"
         for context_point in self.context_points:
             larger_context += context_point.get_context() + "\n"
         larger_context += "End of past LLM queries.\n"
@@ -79,3 +79,19 @@ class LLMProcessor:
         self.context_points.append(contextPoint(self.last_response, self.last_context))
         if len(self.context_points) > self.max_context_points:
             self.context_points.pop(0) #Remove oldest context point if the list is greater than the maximum allowed number of context points
+
+    def convert_bbox_to_definition(self, frame, bbox, label): #Turns a bbox into a definition EX: "Door on top-left"
+        h, w = frame.shape[:2]
+        x1, y1, x2, y2 = bbox
+        cx = (x1 + x2) / 2
+        cy = (y1 + y2) / 2
+        if cx < w / 2 and cy < h / 2:
+            position = "top-left"
+        elif cx >= w / 2 and cy < h / 2:
+            position = "top-right"
+        elif cx < w / 2 and cy >= h / 2:
+            position = "bottom-left"
+        else:
+            position = "bottom-right"
+        return f"{label} on {position}"
+
