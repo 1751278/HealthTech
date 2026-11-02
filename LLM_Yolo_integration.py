@@ -42,8 +42,11 @@ class LLMProcessor:
     def xyxy_rescale(self, x1, y1, x2, y2, scale):
         return [int(coord * scale) for coord in [x1, y1, x2, y2]]
     
-    def make_context(self, Goal, obj_box_context = None): #Returns the context string to be used later
-        self.last_context = f"Goal: {Goal}\nDetected object bounding boxes: {obj_box_context}"
+    def make_context(self, Goal, frame, obj_box_context = None,labels_context = None): #Returns the context string to be used later
+        labeled_context = []
+        for bbox, label in zip(obj_box_context, labels_context):
+            labeled_context.append(self.convert_bbox_to_definition(frame, bbox, label))
+        self.last_context = f"Goal: {Goal}\nDetected object bounding boxes: {labeled_context}"
         context = self.last_context + " (choose [x1, y1, x2, y2] bbox inside list)"
         if self.utilize_past_responses:
             context = self._make_larger_context() + self.last_context
@@ -81,17 +84,5 @@ class LLMProcessor:
             self.context_points.pop(0) #Remove oldest context point if the list is greater than the maximum allowed number of context points
 
     def convert_bbox_to_definition(self, frame, bbox, label): #Turns a bbox into a definition EX: "Door on top-left"
-        h, w = frame.shape[:2]
-        x1, y1, x2, y2 = bbox
-        cx = (x1 + x2) / 2
-        cy = (y1 + y2) / 2
-        if cx < w / 2 and cy < h / 2:
-            position = "top-left"
-        elif cx >= w / 2 and cy < h / 2:
-            position = "top-right"
-        elif cx < w / 2 and cy >= h / 2:
-            position = "bottom-left"
-        else:
-            position = "bottom-right"
-        return f"{label} on {position}"
+        return f"{label} at {bbox}"
 

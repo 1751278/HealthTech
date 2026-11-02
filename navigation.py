@@ -262,6 +262,9 @@ input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
 speaker = Speaker()
+
+
+
 llm = LLMVisionAssistant(provider="gemini", prompt=GOAL_PROMPT).start()   # key from GEMINI_API_KEY
 
 llm_processor = LLMProcessor(llm) #Initialize LLM processor
@@ -574,7 +577,7 @@ def navigate():
     depth_color = None
     boxes       = []
     boxes26     = []
-
+    old_llm_response = None #Stores the last llm_response to be compared
     # FIX: initialize direction so the arrow doesn't crash before depth runs
     direction = 0.0
 
@@ -754,9 +757,8 @@ def navigate():
             #LLM Handler
             #Should only be able to handle objects
             if not llm.is_busy() and start_llm:
-                resized_frame, obj_box_context = llm_processor.preprocess(save_frame, obj_box_context_door) #Rescale the frame for the LLM
-                print("Length of obj_box_context:", len(obj_box_context), "Length of obj_box_context_26:", len(obj_box_context_26))
-                llm_context = llm_processor.make_context(args.goal, obj_box_context) #Formats the context for the LLM so that the LLM can add it to the end of the prompt
+                resized_frame, obj_box_context = llm_processor.preprocess(save_frame, obj_box_context_26) #Rescale the frame for the LLM
+                llm_context = llm_processor.make_context(args.goal, resized_frame, obj_box_context,labels_object) #Formats the context for the LLM so that the LLM can add it to the end of the prompt
                 accepted = llm_processor.process_frame(resized_frame, context=llm_context) #Send the frame to the LLM, if the LLM can query, it will
             while llm.is_busy():# wait for the LLM to finish processing to get result
                 audio_state["left_vol"] = 0.0
@@ -765,8 +767,15 @@ def navigate():
             #LLM Reciever
             llm_response = llm_processor.get_result() #Gets the latest LLM result, not necessarily new from the last frame. Format is described in the prompt
             if llm_response is not None:
-                print(obj_box_context_26)
-                act.update_action(llm_response, heading_degrees, frame, llm_processor.max_size, llm_processor.xyxy_rescale) #Updates the action state based on the LLM response
+                if llm_response != old_llm_response: #Check if it is the same response as before
+                    old_llm_response = llm_response
+                    print(obj_box_context_26)
+                    act.update_action(llm_response, heading_degrees, frame, llm_processor.max_size, llm_processor.xyxy_rescale) #Updates the action state based on the LLM response
+                else:
+                    print("LLM response is the same as the previous one.")
+                    print("AHHHHHHH")
+                    print("IM BURNING THIS PLACE TO THE GROUND!!!!!!")
+                
         if act.get_action_state() == "in_progress":
             track_bbox, combined_direction = act.get_update_dir(frame, heading_degrees)
             cv2.rectangle(frame, (track_bbox[0], track_bbox[1]), (track_bbox[2], track_bbox[3]), (255, 255, 0), 2)  # draw box
