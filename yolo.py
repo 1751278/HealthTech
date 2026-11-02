@@ -10,6 +10,7 @@ import cv2
 from ultralytics import YOLO
 import logging
 
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
@@ -22,7 +23,7 @@ def run_object_detection():
     logging.info("Starting YOLO object detection application.")
 
     try:
-        model = YOLO("YoloModels/doorFrameModel26.pt")
+        model = YOLO("YoloModels/yoloe-26s-seg_ncnn_model")
         logging.info("YOLOv11n model loaded successfully.")
     except Exception as e:
         logging.error(f"Error loading YOLO model: {e}")
@@ -40,14 +41,16 @@ def run_object_detection():
 
     while True:
         success, frame = cap.read()
-        frame = cv2.resize(frame, (360, 640))#vertical phone resolution
+        frame = cv2.resize(frame, (720, 1280))#vertical phone resolution
         if not success:
             logging.warning("Failed to grab frame. Exiting loop.")
             break
 
         results = model(frame, verbose=False)
 
-        annotated_frame = results[0].plot()
+        for result in results:
+            annotated_frame = result.plot()
+        annotated_frame = cv2.resize(annotated_frame, (360, 640))#vertical phone resolution
 
         cv2.imshow("AI Vision: Real-Time Object Detection", annotated_frame)
 

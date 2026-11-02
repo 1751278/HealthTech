@@ -90,7 +90,7 @@ def save_matplotlib_plot(trajectory, out_path="trajectory.png"):
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     print(f"Saved trajectory plot to {out_path}")
 
-CALIBRATION_PATH = "cameraCalibrationData/calibrationMetrics/kenshi.txt"
+CALIBRATION_PATH = "cameraCalibrationData/calibrationMetrics/ethan.txt"
 CALIBRATION_VALS = []
 RES_SCALE = 1/2.0
 with open(CALIBRATION_PATH, "r") as file:

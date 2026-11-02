@@ -119,7 +119,7 @@ result = subprocess.Popen(
 
 
 # --- Capture ---
-DEFAULT_SOURCE   = '0'    # Camera index or file path
+DEFAULT_SOURCE   = '1'    # Camera index or file path
 FRAME_WIDTH      = 360
 FRAME_HEIGHT     = 640
 DEPTH_INFER_SIZE = 256    # Resolution passed to depth model inference
