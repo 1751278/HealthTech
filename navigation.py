@@ -773,8 +773,6 @@ def navigate():
                     act.update_action(llm_response, heading_degrees, frame, llm_processor.max_size, llm_processor.xyxy_rescale) #Updates the action state based on the LLM response
                 else:
                     print("LLM response is the same as the previous one.")
-                    print("AHHHHHHH")
-                    print("IM BURNING THIS PLACE TO THE GROUND!!!!!!")
                 
         if act.get_action_state() == "in_progress":
             track_bbox, combined_direction = act.get_update_dir(frame, heading_degrees)
