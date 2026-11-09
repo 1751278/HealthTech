@@ -17,6 +17,8 @@ class LLMProcessor:
         self.min_seconds_between_calls = 5  # Adjust this value as needed
         self.max_size = max_size #Max size for the longer dimension
         self.last_response = None
+        self.last_frame = None
+        self.image_history = [] # Oldest images go in the front (0)
         self.last_context = ""
         self.context_points = [] #Stores context point objects (from the last [self.max_context_points] responses) that are then evaluated to create a wider context
         self.max_context_points = max_context_points
@@ -47,9 +49,8 @@ class LLMProcessor:
         for bbox, label in zip(obj_box_context, labels_context):
             labeled_context.append(self.convert_bbox_to_definition(frame, bbox, label))
         self.last_context = f"Goal: {Goal}\nDetected object bounding boxes: {labeled_context}"
+        self.last_frame = frame
         context = self.last_context + " (choose [x1, y1, x2, y2] bbox inside list)"
-        if self.utilize_past_responses:
-            context = self._make_larger_context() + self.last_context
         return context
     
     def evaluate(self, frame, context=""): #Determine if a frame should be processed, more complicated functionality should come later, for now it is just time based.
@@ -60,7 +61,7 @@ class LLMProcessor:
 
     def process_frame(self, frame, context=""): #Returns if a frame was accepted, also sends it to be queried
         if self.evaluate(frame, context):
-            accepted = self.llm.force_submit(frame, context=context)
+            accepted = self.llm.force_submit(frame, context=context, history=(self._make_history(), self.image_history))
             return accepted
         return False
 
@@ -69,17 +70,20 @@ class LLMProcessor:
             self.last_response = self.llm.latest_description()
             if self.utilize_past_responses:
                 self._make_context_point()
+                self.image_history.append(self.last_frame)
+                if len(self.image_history) > self.max_context_points:
+                    self.image_history.pop(0) #Remove oldest image if the list is greater than the maximum allowed number of images
         return self.last_response
 
-    def _make_larger_context(self): #Create a larger context string from past context points
-        larger_context = "Here is a list of past LLM queries and their respective decisions, in order from oldest to newest. EXPECT A GREAT DEAL OF CHANGE BETWEEN QUERIES AS THE USER HAS MOVED:\n"
+    def _make_history(self): #Creates a list of past queries and decisions, serving as captions to previous images
+        history = []
         for context_point in self.context_points:
-            larger_context += context_point.get_context() + "\n"
-        larger_context += "End of past LLM queries.\n"
-        return larger_context
+            history.append(context_point.get_context())
+        return history
+
 
     def _make_context_point(self):
-        self.context_points.append(contextPoint(self.last_response, self.last_context))
+        self.context_points.append(contextPoint(self.last_response, self.last_context, self.last_frame))
         if len(self.context_points) > self.max_context_points:
             self.context_points.pop(0) #Remove oldest context point if the list is greater than the maximum allowed number of context points
 

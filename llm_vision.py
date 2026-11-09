@@ -148,7 +148,7 @@ class LLMVisionAssistant:
             return
         self.force_submit(frame)
 
-    def force_submit(self, frame, context="", request_id=None):
+    def force_submit(self, frame, context="", request_id=None, history=(None, None)):
         # Sends a frame to the AI right now (ignoring the frame-count timer).
         # `context` is extra text to add to the prompt, and `request_id` is a
         # tag so the caller can match an answer back to the question it asked.
@@ -162,7 +162,7 @@ class LLMVisionAssistant:
         try:
             # put_nowait = "add to the queue, but don't wait if it's full".
             # We pack everything the worker needs into one tuple.
-            self._frame_queue.put_nowait((frame, context, request_id))
+            self._frame_queue.put_nowait((frame, context, request_id, history))
             return True
         except queue.Full:
             # Another frame is already waiting, so we drop this one.
@@ -208,7 +208,7 @@ class LLMVisionAssistant:
                 break
             # Process the frame, grabbing the necessary information
             # Unpack the tuple we built in force_submit
-            frame, context, request_id = item
+            frame, context, request_id, history  = item
             with self._state_lock:
                 self._busy = True  # Tell everyone we're now working
             # Chained assignment: both _last_call_time and t0 get the same
@@ -216,7 +216,7 @@ class LLMVisionAssistant:
             self._last_call_time = t0 = time.time()
             try:
                 print(f"[llm_vision] Calling Gemini model={self.model}")
-                description = self._call_api(frame, context)  # The slow network call happens here
+                description = self._call_api(frame, context, history)  # The slow network call happens here
                 print("[llm_vision] response:", description)
                 # Attach the request_id so the caller knows which request this answer belongs to
                 description["request_id"] = request_id
@@ -242,9 +242,10 @@ class LLMVisionAssistant:
             raise RuntimeError("JPEG encode failed")
         return base64.b64encode(buf).decode("utf-8")  # bytes -> base64 -> normal string
 
-    def _call_api(self, frame, context=""):
+    def _call_api(self, frame, context="", history=(None, None)):
         # Sends one image to the chosen AI provider and returns its answer.
         b64 = self._encode_jpeg_b64(frame)
+        context_history, image_history = history #Take from the tuple
 
         # NOTE: the openai and anthropic branches below can't run right now,
         # because __init__ only creates a client for "gemini". They're left
@@ -281,11 +282,18 @@ class LLMVisionAssistant:
 
         elif self.provider == "gemini":
             from google.genai import types
+            contents = []
             # Gemini wants real image bytes, so we undo the base64 step
             image_bytes = base64.b64decode(b64)
-            # Add any extra context to the end of the prompt (blank line in between)
+            contents.append("The following are past images and decisions use them as needed. Expect both translation and rotation between these images and the current one. They are listed from oldest to youngest, top to bottom")
+            for i, image in enumerate(image_history):
+                contents.append(types.Part.from_bytes(data=cv2.imencode('.jpg', image)[1].tobytes(), mime_type="image/jpeg"))
+                contents.append(context_history[i]) #Serves as a caption to the image
+            contents.append("That concludes the past images and decisions. The following is the current image:")
+            contents.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
             prompt = self.prompt + ("\n\n" + context if context else "")
             print(prompt)
+            contents.append(prompt)
             # The "schema" is a template that forces the AI to reply in an exact
             # JSON shape, instead of free-form text. That makes the answer easy
             # for our code to read and use.
@@ -325,10 +333,7 @@ class LLMVisionAssistant:
             # Actually send the image + prompt to Gemini and wait for the reply
             response = self._client.models.generate_content(
                 model=self.model,
-                contents=[
-                    types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
-                    prompt,
-                ],
+                contents=contents,
                 config=types.GenerateContentConfig( #Constraints the LLM to this format
                     thinking_config=types.ThinkingConfig(thinking_level="minimal"), # Disable the model's internal thinking process, forcing it to respond immediately
                     response_mime_type="application/json",  # Reply as JSON, not plain text
