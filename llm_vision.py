@@ -330,11 +330,13 @@ class LLMVisionAssistant:
                     prompt,
                 ],
                 config=types.GenerateContentConfig( #Constraints the LLM to this format
+                    thinking_config=types.ThinkingConfig(thinking_level="minimal"), # Disable the model's internal thinking process, forcing it to respond immediately
                     response_mime_type="application/json",  # Reply as JSON, not plain text
                     response_schema=schema,  # ...and follow the template above
-                    temperature=0.1,  # Low = more predictable/consistent, high = more creative. We want consistent.
+                    max_output_tokens=300
                 ),
             )
+
             try:
                 print("description received")
                 # response.text is a JSON string; json.loads converts it to a Python dict
