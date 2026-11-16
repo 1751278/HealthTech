@@ -72,7 +72,7 @@ import os
 
 from depth_anything_v2.dpt import DepthAnythingV2
 from ultralytics import YOLO
-
+from ultralytics import YOLOE
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -99,6 +99,7 @@ GOAL_PROMPT = (
 # --- Models ---
 YOLO_MODEL_PATH    = "YoloModels/DoorFrameModel26.pt" # Using the door frame model so we can try and help navigate Users to the door.
 YOLOV26_MODEL_PATH = "YoloModels/Yolo26n.pt" # Using the door frame model so we can try and help navigate Users to the door.
+YOLOE_MODEL_PATH = "YoloModels/yoloe-26s-seg.pt"
 DEPTH_MODEL_PATH   = "depthmodels/depth_anything_v2_vits.pth"
 TFLITE_PATH = "depthAnythingModelFaster/midasDepth.tflite"
 DEPTH_ENCODER      = 'vits'
@@ -244,6 +245,7 @@ LUT = (cmap(np.arange(256))[:, :3] * 255).astype(np.uint8)[:, ::-1]
 print("loading models...")
 yolo = YOLO(YOLO_MODEL_PATH)
 yolo26 = YOLO(YOLOV26_MODEL_PATH)
+yoloe = YOLOE(YOLOE_MODEL_PATH)
 #disable depthanything for now
 """
 depth_model = DepthAnythingV2(
@@ -688,17 +690,12 @@ def navigate():
             # Resize depth frame for side-by-side display
             depth_color = cv2.resize(depth_color, (w, h))
 
-        # --- Goal navigation (before door detection: frame is still clean here) ---
-        # Only feed the goal layer once the depth block has actually run, so it
-        # never sees unbound/stale `col`.
-
-        #if depth_uint8 is not None:
-            #nav.update(frame, depth_uint8, frame_num, latest_traj, col)
-
+        
         labels_door = []
         # --- Door detection ---
         if frame_num % args.yolo_door_interval == 0:
-            results = yolo(frame, verbose=False)
+            yoloe.set_classes(["door", "doorway"])
+            results = yoloe.predict(frame, verbose=False)
             boxes   = results[0].boxes
             obj_box_context_door = boxes.xyxy.cpu().round().int().tolist()
 
@@ -707,7 +704,7 @@ def navigate():
         index = -1
         #Pick the best door (highest confidence) and use that to steer toward the door
         for i, box in enumerate(boxes):
-            label           = yolo.names[int(box.cls[0])]
+            label           = yoloe.names[int(box.cls[0])]
             labels_door.append(label)
             x1, y1, x2, y2 = map(int, box.xyxy[0])  # bounding box coordinates
             color           = BOX_COLOR_DOOR

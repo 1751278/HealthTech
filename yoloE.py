@@ -7,7 +7,7 @@ model = YOLOE("YoloModels/yoloe-26s-seg.pt")
 
 # 2. Define the custom text prompts you want to detect in real-time
 # You can change these words to look for literally anything!
-target_classes = ["open floor", "stairs", "door", "doorway"]
+target_classes = ["door", "doorway"]
 model.set_classes(target_classes)
 
 # 3. Initialize the webcam (0 is usually the default camera)
