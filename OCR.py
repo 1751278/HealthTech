@@ -11,7 +11,7 @@ import cv2
 import easyocr
 
 model_start_time = time.perf_counter()
-ocr = easyocr.Reader(['en'], gpu=False, quantize=True) # this is the OCR reader, it takes a list of languages to read. In this case, it's set to English. It can be modified to read other languages if needed.
+ocr = easyocr.Reader(['en'], recognizer=False, gpu=False, quantize=True) # this is the OCR reader, it takes a list of languages to read. In this case, it's set to English. It can be modified to read other languages if needed.
 model_load_time = time.perf_counter()
 
 
@@ -27,19 +27,20 @@ def read_text_from_image(image):
 def main():
     print("Hello From HealthTech! \n")
     model_start_prediction_time = time.perf_counter()
-    result = ocr.readtext(img)
+    horizontal_list, free_list = ocr.detect(img)
     model_prediction_time = time.perf_counter()
     
-    for (bbox, text, prob) in result:
-        print(f"Text: {text}, Confidence: {prob}")
+    for bbox in horizontal_list[0]:
+        print(bbox)
+        #print(f"Text: {text}, Confidence: {prob}")
         ##gather info on bound box
-        (top_left, top_right, bottom_right, bottom_left) = bbox
-        top_left = (int(top_left[0]), int(top_left[1]))
-        bottom_right = (int(bottom_right[0]), int(bottom_right[1]))
+        (x_min, x_max, y_min, y_max) = bbox
+        top_left = (int(x_min), int(y_min))
+        bottom_right = (int(x_max), int(y_max))
         ## make bound box
         cv2.rectangle(img, top_left, bottom_right, (0, 255, 0), 2)
         ## put text on image
-        cv2.putText(img, text, (top_left[0]-20, top_left[1]), fontFace = cv2.FONT_ITALIC, fontScale = 0.5, color = (0, 0, 255), thickness = 1) #CV2 uses BGR
+        #cv2.putText(img, text, (top_left[0]-20, top_left[1]), fontFace = cv2.FONT_ITALIC, fontScale = 0.5, color = (0, 0, 255), thickness = 1) #CV2 uses BGR
 
     
     print(f"\n Model load time: {model_load_time - model_start_time}s") #How long did it take to get the model ready?

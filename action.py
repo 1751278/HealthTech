@@ -70,7 +70,7 @@ class Action:
     def track(self, frame):
         #track object and go to object based on bounding box
         success, bbox = self.tracker.update(frame)
-        bbox = self.resize_func(bbox[0], bbox[1], bbox[0]+bbox[2], bbox[1]+bbox[3], self.scale_back)
+        bbox = self.resize_func(bbox[0], bbox[1], bbox[0]+bbox[2], bbox[1]+bbox[3], 1.0)
         if success:
             bbox_center = (int((bbox[0] + bbox[2]) / 2), int((bbox[1] + bbox[3]) / 2))
             frame_center = (frame.shape[1] // 2, frame.shape[0] // 2)
