@@ -89,9 +89,12 @@ GOAL_PROMPT = (
     "Targets can still be obstructed by minor obstacles "
     "because program can avoid using depth map. Prefer continuing toward a useful existing target when appropriate.\n\n"
     "For a bbox, return its coordinates in the image's pixel space. "
+    "Moving straight involves moving in a straight line, naturally avoiding obstances (which is handled automatically), and searching for a object \n"
+    "When giving the search object, please give a list of objects to search for in a string format. Stay general with these search terms, like door, sign, etc. \n"
     "For a turn, use degrees, with negative values meaning left and positive "
     "values meaning right.\n\n"
     'Output only a JSON object: {"action":"target","bbox":[x1,y1,x2,y2]} '
+    'or {"action":"straight","search":[string of objects to search for]} '
     'or on occasion {"action":"turn","angle":degrees}.'
 )
 

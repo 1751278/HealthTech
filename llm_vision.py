@@ -302,7 +302,7 @@ class LLMVisionAssistant:
                 "properties": {
                     "action": {
                         "type": "String",
-                        "description": "Either: 'turn' or 'target'",
+                        "description": "Either: 'turn','target', or 'straight'. 'turn' means to rotate in place, 'target' means to move toward a specific object, and 'straight' means to move forward while searching for objects.",
                     },
                     "bbox": {
                         "type": "ARRAY",
@@ -311,7 +311,12 @@ class LLMVisionAssistant:
                     },
                     "angle": {
                         "type": "NUMBER",
-                        "description": "The angle to turn, in degrees. Negative values mean left, positive values mean right.",
+                        "description": "The angle to turn, in degrees. Negative values mean left, positive values mean right. INPUT ONLY NON-ZERO VALUES",
+                    },
+                    "search": {
+                        "type": "ARRAY",
+                        "items": {"type": "STRING"},
+                        "description": "List of objects to search for when moving straight. Stay general with these search terms, like door, sign, etc. INPUT ONLY NON-EMPTY LISTS",
                     },
                     "reasoning": {
                         "type": "String",
@@ -319,7 +324,7 @@ class LLMVisionAssistant:
                     },
                     "context": {
                         "type": "String",
-                        "description": "Provide a brief description of the whole picture, note key features and interest points. Keep it short and concise. Conclude with either the angle you are turning, or the bbox that you picked",
+                        "description": "Provide a brief description of the whole picture, note key features and interest points. Keep it short and concise. Conclude with either the angle you are turning, or the bbox that you picked/items you searched for",
                     },
                 },
             }
