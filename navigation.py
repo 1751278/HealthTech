@@ -102,7 +102,7 @@ GOAL_PROMPT = (
 # --- Models ---
 YOLO_MODEL_PATH    = "YoloModels/DoorFrameModel26.pt" # Using the door frame model so we can try and help navigate Users to the door.
 YOLOV26_MODEL_PATH = "YoloModels/Yolo26n.pt" # Using the door frame model so we can try and help navigate Users to the door.
-YOLOE_MODEL_PATH = "YoloModels/yoloe-26s-seg.pt"
+YOLOE_MODEL_PATH = "YoloModels/yoloe-26n-seg.pt"
 DEPTH_MODEL_PATH   = "depthmodels/depth_anything_v2_vits.pth"
 TFLITE_PATH = "depthAnythingModelFaster/midasDepth.tflite"
 DEPTH_ENCODER      = 'vits'
@@ -618,6 +618,7 @@ def navigate():
 
     start_llm = False 
     time.sleep(5) # give time for vo to start up and send the first trajectory
+    #yoloe.set_classes(["door", "doorway", "open floor"])
     while True:
         ret, frame = cap.read()
         obj_box_context = None #Establish this for use in the yolo section
@@ -730,7 +731,8 @@ def navigate():
 
 
 
-
+        #disable yolo26 for now
+        """
         # -- Object Detection using yolo26 for desk and chair avoidance. --
         labels_object = []
         if frame_num % args.yolo_default_interval == 0:
@@ -748,17 +750,19 @@ def navigate():
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)  # draw box
                 cv2.putText(frame, label, (x1, y1 - 5),cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)  # draw label
 
+        """
+
         # get steer with obect detection
-        direction = get_steer_from_objects(boxes26, depth_uint8, direction)
-        labels_object.extend(labels_door) if labels_door is not None else labels_object
-        obj_box_context_26.extend(obj_box_context_door) if obj_box_context_door is not None else obj_box_context_26
+        #direction = get_steer_from_objects(boxes26, depth_uint8, direction)
+        labels_door = labels_door
+        obj_box_context_door = obj_box_context_door
 
         if act.get_action_state() != "in_progress" and start_llm:
             #LLM Handler
             #Should only be able to handle objects
             if not llm.is_busy() and start_llm:
-                resized_frame, obj_box_context = llm_processor.preprocess(save_frame, obj_box_context_26) #Rescale the frame for the LLM
-                llm_context = llm_processor.make_context(args.goal, resized_frame, obj_box_context,labels_object) #Formats the context for the LLM so that the LLM can add it to the end of the prompt
+                resized_frame, obj_box_context = llm_processor.preprocess(save_frame, obj_box_context_door) #Rescale the frame for the LLM
+                llm_context = llm_processor.make_context(args.goal, resized_frame, obj_box_context,labels_door) #Formats the context for the LLM so that the LLM can add it to the end of the prompt
                 accepted = llm_processor.process_frame(resized_frame, context=llm_context) #Send the frame to the LLM, if the LLM can query, it will
             while llm.is_busy():# wait for the LLM to finish processing to get result
                 audio_state["left_vol"] = 0.0
@@ -769,7 +773,7 @@ def navigate():
             if llm_response is not None:
                 if llm_response != old_llm_response: #Check if it is the same response as before
                     old_llm_response = llm_response
-                    print(obj_box_context_26)
+                    print(obj_box_context_door)
                     act.update_action(llm_response, heading_degrees, frame, llm_processor.max_size, llm_processor.xyxy_rescale) #Updates the action state based on the LLM response
                 else:
                     print("LLM response is the same as the previous one.")
