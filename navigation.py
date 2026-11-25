@@ -36,7 +36,7 @@ import json
 
 import zmq
 from zmq.decorators import socket
-
+import trajectory_helper as traj_helper
 from goal_nav import GoalNav, Speaker, VoiceGoal
 from llm_vision import LLMVisionAssistant
 from LLM_Yolo_integration import LLMProcessor
@@ -577,15 +577,15 @@ def navigate():
         if not cap.isOpened():
             print("Error: Could not open video source.")
             exit()
-
+    t_angle = 0  # Initialize target angle for navigation
     frame_num   = 0
     depth_color = None
     boxes       = []
     boxes26     = []
+    traj_canvas = None
     old_llm_response = None #Stores the last llm_response to be compared
     # FIX: initialize direction so the arrow doesn't crash before depth runs
     direction = 0.0
-
     # Bound here so the depth block is the only place that assigns them, and
     # consumers downstream can test for None instead of risking NameError.
     depth_uint8 = None
@@ -649,11 +649,13 @@ def navigate():
 
             data = json.loads(feedback_msg.decode('utf-8'))
             #Data from vo processing
-            trajectory = np.array(data['trajectory'], dtype=np.float32)
+            trajectory = [(float(p[0, 0]), float(p[2, 0])) for p in np.array(data['trajectory'], dtype=np.float32)] #Get the data, convert it, then store as a list of (x, z) tuples
 
 
-            latest_traj = trajectory[-1]
-            #print("Received trajectory:", trajectory.shape)
+            t_angle = traj_helper.find_best_angle(trajectory, prev_angle = t_angle) #Target angle to move
+            traj_canvas = draw_trajectory_canvas(np.array(data['trajectory'], dtype=np.float32), t_angle)
+            
+            
             heading_degrees = data['vo'][0]
             #print(heading_degrees)
             loop_closure_detected = data['vo'][1]
@@ -818,7 +820,8 @@ def navigate():
         # display camera frame and depth side by side
         out = np.hstack([frame, depth_color,save_frame]) if depth_color is not None else frame
         cv2.imshow('navigator', out)
-
+        if traj_canvas is not None:
+            cv2.imshow('trajectory', traj_canvas)
 
 
 
@@ -867,6 +870,39 @@ def _open_audio_stream():
         return None
 
 
+def draw_trajectory_canvas(trajectory, angle, distance = 5, canvas_size=600, world_scale=1.0):
+    """Renders the X-Z trajectory onto a fresh top-down canvas each call."""
+    canvas = np.full((canvas_size, canvas_size, 3), 30, dtype=np.uint8)
+    cx, cy = canvas_size // 2, canvas_size // 2
+    cv2.circle(canvas, (cx, cy), 3, (0, 0, 255), -1)  # origin marker
+
+    pts = []
+    for p in trajectory:
+        x, z = float(p[0, 0]), float(p[2, 0])
+        px = int(x * world_scale) + cx
+        py = int(-z * world_scale) + cy #make z-axis go "up" in the image
+        pts.append((px, py))
+
+    for i in range(1, len(pts)):
+        cv2.line(canvas, pts[i - 1], pts[i], (0, 255, 0), 2)
+
+    if pts:
+        cv2.circle(canvas, pts[-1], 4, (255, 255, 0), -1)  # current position
+    
+    # Draw the target angle line from the current position
+    if pts:
+        current_pos = pts[-1]
+        target_x = int(current_pos[0] + distance * np.cos(angle))
+        target_y = int(current_pos[1] + distance * np.sin(angle))
+        cv2.line(canvas, current_pos, (target_x, target_y), (0, 0, 255), 2)
+
+    cv2.putText(canvas, "Top-down trajectory (X-Z): NAV.py", (10, 20),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+    return canvas
+
+
+
+
 # calling the function
 if __name__ == "__main__":
     #starts callback audio stream for non-blocking sound playback
@@ -876,3 +912,4 @@ if __name__ == "__main__":
             navigate()
     else:
         navigate()
+

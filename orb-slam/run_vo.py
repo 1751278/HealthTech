@@ -44,7 +44,7 @@ except ImportError as e:
 
 
 
-
+t_size = 5000  # Number of recent points to keep in the trajectory
 
 
 # --------------------------------------------------------------------------- #
@@ -120,6 +120,9 @@ def main():
                          help="Disable live OpenCV windows (useful for headless runs)")
     parser.add_argument("--out", default="trajectory.png", help="Output path for the final trajectory plot")
     args = parser.parse_args()
+    args.no_display = True
+
+
     K = np.array([[args.fx, 0, args.cx],[0, args.fy, args.cy],[0, 0, 1]], dtype=np.float64)
 
     print("Camera intrinsics K:\n", K)
@@ -156,14 +159,15 @@ def main():
                     heading_degree = R_euler.as_euler('xzy', degrees=True)[2]  # Yaw angle
                 loop_closure_detected = vo.loop_closure_detected
 
-                trajectory_data = np.array(vo.trajectory[-100:], dtype=np.float64) #Only the most recent 300 points, so the message stays a fixed size
+                trajectory_data = np.array(vo.trajectory[-t_size:], dtype=np.float64) #Only the most recent n points, so the message stays a fixed size
                 vo_data = np.array([heading_degree, loop_closure_detected], dtype=np.float64)
-                send_data = {"trajectory": trajectory_data.tolist(), "vo": vo_data.tolist()} #300 recent points and the last array is [heading_degree, loop_closure_detected, 0]
+                send_data = {"trajectory": trajectory_data.tolist(), "vo": vo_data.tolist()} #n recent points and the last array is [heading_degree, loop_closure_detected, 0]
                 dict_bytes = json.dumps(send_data).encode('utf-8')
 
                 sender.send(dict_bytes)
 
         frame_count += 1
+        
         if not args.no_display:
  
 
