@@ -584,6 +584,7 @@ def navigate():
     boxes26     = []
     traj_canvas = None
     trajectory_raw = []
+    trajectory = None
     old_llm_response = None #Stores the last llm_response to be compared
     # FIX: initialize direction so the arrow doesn't crash before depth runs
     direction = 0.0
@@ -666,7 +667,7 @@ def navigate():
             #print(trajectory[-1)
 
 
-            t_angle = traj_helper.find_best_angle(trajectory, heading_degrees, prev_angle = t_angle) #Target angle to move
+            t_angle = traj_helper.find_best_traj_angle(trajectory, heading_degrees, prev_angle = t_angle) #Target angle to move
             #print(t_angle)
             traj_canvas = draw_trajectory_canvas(np.array(trajectory_raw, dtype=np.float32), heading_degrees, t_angle)
 
@@ -676,29 +677,8 @@ def navigate():
 
             depth_map = get_tflite_depth(frame)  # run TFLITE depth estimation
             depth_uint8 = depth_map.astype(np.uint8)
-            # raw_steer is the new candidate direction based on current depth map
-            raw_steer, col, stats = get_steer(depth_uint8)
 
             direction = get_better_steer(depth_uint8)
-
-            # Hysteresis: only commit to a new direction after HYSTERESIS_FRAMES
-            # consecutive frames agree on it.
-            vote_buffer.append(raw_steer)
-            if len(vote_buffer) == HYSTERESIS_FRAMES and len(set(vote_buffer)) == 1:
-                if committed_steer != raw_steer:
-                    #print(f"Steering change: {committed_steer} -> {raw_steer}")
-
-                    # FIX: play audio from the start of the file, not 1 second in
-                    #data, sr = sf.read(AUDIO_FORWARD)  # default to forward sound
-                    if raw_steer == "TURN LEFT <<":
-                        #data, sr = sf.read(AUDIO_LEFT)
-                        pass
-                    elif raw_steer == ">> TURN RIGHT":
-                        #data, sr = sf.read(AUDIO_RIGHT)
-                        pass
-                    #sd.play(data, sr)
-
-                committed_steer = raw_steer
 
             # Index into LUT for fast colormap application
             depth_color = LUT[depth_uint8]
@@ -708,38 +688,31 @@ def navigate():
 
         
         labels_door = []
-        # --- Door detection ---
-        if frame_num % args.yolo_door_interval == 0:
-            yoloe.set_classes(["door", "doorway"])
-            results = yoloe.predict(frame, verbose=False)
-            boxes   = results[0].boxes
-            obj_box_context_door = boxes.xyxy.cpu().round().int().tolist()
+        #only run yolo e in main loop if action not in progress
+        if act.get_action_state() != "in_progress":
+            # --- Door detection ---
+            if frame_num % args.yolo_door_interval == 0:
+                yoloe.set_classes(["door", "doorway"])
+                results = yoloe.predict(frame, verbose=False)
+                boxes   = results[0].boxes
+                obj_box_context_door = boxes.xyxy.cpu().round().int().tolist()
 
-        # --- Draw Frame ---
-        max_conf = 0
-        index = -1
-        #Pick the best door (highest confidence) and use that to steer toward the door
-        for i, box in enumerate(boxes):
-            label           = yoloe.names[int(box.cls[0])]
-            labels_door.append(label)
-            x1, y1, x2, y2 = map(int, box.xyxy[0])  # bounding box coordinates
-            color           = BOX_COLOR_DOOR
-            conf = box.conf.item()
-            if conf > max_conf and conf > DOOR_CONFIDENCE_THRESHOLD and 'door' in label:
-                max_conf = conf
-                index = i
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)  # draw box
-            cv2.putText(frame, label, (x1, y1 - 5),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)  # draw label
-
-        #Get straightline steering to the door if one is detected with high confidence
-        if index != -1:
-            door_direction = get_door_steer(boxes[index], w, yolo.names)
-            door_state["last_seen_frame"] = frame_num
-        else:
-            door_direction = door_state["last_door_direction"]  # keep going toward the last known door direction if we lose sight of it
-            max_conf = door_state["last_door_confidence"]*math.exp(-0.01*(frame_num - door_state["last_seen_frame"])) #If we don't see a door, use the last known confidence to determine how much to trust the last known direction
-            #print(max_conf, " On frame: ", frame_num - door_state["last_seen_frame"], " Orignial confidence: ", door_state["last_door_confidence"])
+            # --- Draw Frame ---
+            max_conf = 0
+            index = -1
+            #Pick the best door (highest confidence) and use that to steer toward the door
+            for i, box in enumerate(boxes):
+                label           = yoloe.names[int(box.cls[0])]
+                labels_door.append(label)
+                x1, y1, x2, y2 = map(int, box.xyxy[0])  # bounding box coordinates
+                color           = BOX_COLOR_DOOR
+                conf = box.conf.item()
+                if conf > max_conf and conf > DOOR_CONFIDENCE_THRESHOLD and 'door' in label:
+                    max_conf = conf
+                    index = i
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)  # draw box
+                cv2.putText(frame, label, (x1, y1 - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)  # draw label
 
 
 
@@ -769,6 +742,7 @@ def navigate():
         labels_door = labels_door
         obj_box_context_door = obj_box_context_door
 
+        dummy_answer = {'action': 'straight', 'search': ['door', 'hallway'], 'reasoning': ''}
         if act.get_action_state() != "in_progress" and start_llm:
             #LLM Handler
             #Should only be able to handle objects
@@ -786,20 +760,17 @@ def navigate():
                 if llm_response != old_llm_response: #Check if it is the same response as before
                     old_llm_response = llm_response
                     print(obj_box_context_door)
-                    act.update_action(llm_response, heading_degrees, frame, llm_processor.max_size, llm_processor.xyxy_rescale) #Updates the action state based on the LLM response
+                    act.update_action(llm_response, heading_degrees, frame, llm_processor.max_size, llm_processor.xyxy_rescale, yoloe) #Updates the action state based on the LLM response
                 else:
                     print("LLM response is the same as the previous one.")
                 
         if act.get_action_state() == "in_progress":
-            track_bbox, combined_direction = act.get_update_dir(frame, heading_degrees)
-            cv2.rectangle(frame, (track_bbox[0], track_bbox[1]), (track_bbox[2], track_bbox[3]), (255, 255, 0), 2)  # draw box
-
-        target_dir, target_conf = door_direction, max_conf
-        #combined_direction = combine_steer(direction, target_dir, target_conf, col['c'])
+            modified_frame, combined_direction = act.get_update_dir(frame, heading_degrees, trajectory)
+            frame = modified_frame
 
         #smoothen direction with moving average
         direction_history[:-1] = direction_history[1:]
-        direction_history[-1] = combined_direction
+        direction_history[-1] = direction if combined_direction == 0 else combined_direction
         directionArray = direction_history * direction_smoothen
         smooth_direction = np.sum(directionArray)
         ### Direction should be finalized at this point
@@ -818,9 +789,6 @@ def navigate():
 
         end_point = (int(math.sin(math.radians(smooth_direction)) * 100 + w//2), int(-math.cos(math.radians(smooth_direction)) * 100 + h//2))
         cv2.arrowedLine(frame, start_point, end_point, (0, 255, 0), 2)  # draw green arrow for avoidance direction
-
-        end_point = (int(math.sin(math.radians(target_dir)) * 100 + w//2), int(-math.cos(math.radians(target_dir)) * 100 + h//2))
-        cv2.arrowedLine(frame, start_point, end_point, (0, 0, 255), 2)  # draws red arrow for door/target direction
 
         end_point = (int(math.sin(math.radians(combined_direction)) * 100 + w//2), int(-math.cos(math.radians(combined_direction)) * 100 + h//2))
         cv2.arrowedLine(frame, start_point, end_point, (255, 0, 0), 2)  # draws blue arrow for FINAL direction
