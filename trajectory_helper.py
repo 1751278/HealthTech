@@ -8,14 +8,16 @@
 #################
 import math
 
-def find_best_angle(trajectory, prev_angle = None, angular_step=5, lookahead=10, distance_step = 1, smoothing = 0.2, bias = 3): #Pass in the list of (x, z) coordinates representing the trajectory. Lookahead is the max distance to consider
+def find_best_angle(trajectory, current_angle, prev_angle = None, angular_step=5, lookahead=100, distance_step = 10, smoothing = 0.01, bias = 10): #Pass in the list of (x, z) coordinates representing the trajectory. Lookahead is the max distance to consider
     x, z = trajectory[-1]
+    trajectory = trajectory[-1000:]  # Only consider the last 1000 points for efficiency
+    current_angle = int(current_angle - 90)# Adjust for coordinate system difference
 
     best_angle = None
     best_score = -float("inf")
 
-    # Test every 5 degrees
-    for angle in range(0, 360, angular_step):
+    # Test every 10 degrees
+    for angle in range(current_angle - 80, current_angle + 80, angular_step):
         rad = math.radians(angle)
 
         score = 0
@@ -30,7 +32,7 @@ def find_best_angle(trajectory, prev_angle = None, angular_step=5, lookahead=10,
             # Distance to nearest recorded point
             nearest = min(
                 math.hypot(px - vx, pz - vz)
-                for vx, vz in trajectory
+                for vx, vz in trajectory[::3] #compare with only every 3 points
             )
 
             score += nearest
@@ -38,6 +40,6 @@ def find_best_angle(trajectory, prev_angle = None, angular_step=5, lookahead=10,
         if score > best_score * (1+smoothing): #Smoothing means the new score must be (smoothing*100)% more than the previous best score
             best_score = score
             best_angle = angle
-            print("BEST_SCORE: ", best_score)
+            #print("BEST_SCORE: ", best_score)
 
     return best_angle

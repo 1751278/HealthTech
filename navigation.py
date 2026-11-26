@@ -583,6 +583,7 @@ def navigate():
     boxes       = []
     boxes26     = []
     traj_canvas = None
+    trajectory_raw = []
     old_llm_response = None #Stores the last llm_response to be compared
     # FIX: initialize direction so the arrow doesn't crash before depth runs
     direction = 0.0
@@ -648,17 +649,26 @@ def navigate():
             feedback_msg = receiver.recv()
 
             data = json.loads(feedback_msg.decode('utf-8'))
-            #Data from vo processing
-            trajectory = [(float(p[0, 0]), float(p[2, 0])) for p in np.array(data['trajectory'], dtype=np.float32)] #Get the data, convert it, then store as a list of (x, z) tuples
 
-
-            t_angle = traj_helper.find_best_angle(trajectory, prev_angle = t_angle) #Target angle to move
-            traj_canvas = draw_trajectory_canvas(np.array(data['trajectory'], dtype=np.float32), t_angle)
-            
-            
             heading_degrees = data['vo'][0]
-            #print(heading_degrees)
+            print(heading_degrees)
             loop_closure_detected = data['vo'][1]
+
+            new_traj_point = data['trajectory'][-1:]  # Get the last point in the trajectory
+            #print("New trajectory point received:", new_traj_point)
+            new_point = (float(np.array(new_traj_point[0])[0,0]), float(np.array(new_traj_point[0])[2,0]))  # Convert to (x, z) tuple
+            old_point = (float(np.array(trajectory_raw[-1])[0,0]), float(np.array(trajectory_raw[-1])[2,0])) if trajectory_raw else (0,0)
+            if len(trajectory_raw) < 10 or math.dist(new_point, old_point) > 3:  # Only add if it's the first point or sufficiently far from the last
+                trajectory_raw.append(new_traj_point[0])  # Add the new point to the trajectory
+
+            #Data from vo processing
+            trajectory = [(float(p[0, 0]), float(p[2, 0])) for p in np.array(trajectory_raw, dtype=np.float32)] #Get the data, convert it, then store as a list of (x, z) tuples
+            #print(trajectory[-1)
+
+
+            t_angle = traj_helper.find_best_angle(trajectory, heading_degrees, prev_angle = t_angle) #Target angle to move
+            #print(t_angle)
+            traj_canvas = draw_trajectory_canvas(np.array(trajectory_raw, dtype=np.float32), heading_degrees, t_angle)
 
         # --- Depth estimation ---
         if frame_num % args.depth_interval == 0:
@@ -870,7 +880,7 @@ def _open_audio_stream():
         return None
 
 
-def draw_trajectory_canvas(trajectory, angle, distance = 5, canvas_size=600, world_scale=1.0):
+def draw_trajectory_canvas(trajectory, current_angle, best_angle, distance = 30, canvas_size=600, world_scale=1.0):
     """Renders the X-Z trajectory onto a fresh top-down canvas each call."""
     canvas = np.full((canvas_size, canvas_size, 3), 30, dtype=np.uint8)
     cx, cy = canvas_size // 2, canvas_size // 2
@@ -883,7 +893,7 @@ def draw_trajectory_canvas(trajectory, angle, distance = 5, canvas_size=600, wor
         py = int(-z * world_scale) + cy #make z-axis go "up" in the image
         pts.append((px, py))
 
-    for i in range(1, len(pts)):
+    for i in range(1, len(pts), 2):  # draw lines between every other point for clarity
         cv2.line(canvas, pts[i - 1], pts[i], (0, 255, 0), 2)
 
     if pts:
@@ -892,9 +902,13 @@ def draw_trajectory_canvas(trajectory, angle, distance = 5, canvas_size=600, wor
     # Draw the target angle line from the current position
     if pts:
         current_pos = pts[-1]
-        target_x = int(current_pos[0] + distance * np.cos(angle))
-        target_y = int(current_pos[1] + distance * np.sin(angle))
-        cv2.line(canvas, current_pos, (target_x, target_y), (0, 0, 255), 2)
+        target_x = int(current_pos[0] + distance * np.cos(np.radians(best_angle)))
+        target_y = int(current_pos[1] + distance * np.sin(np.radians(best_angle)))
+        cv2.line(canvas, current_pos, (target_x, target_y), (0, 0, 255), 2) # best angle line
+
+        target_x = int(current_pos[0] + distance * np.cos(np.radians(current_angle - 90)))
+        target_y = int(current_pos[1] + distance * np.sin(np.radians(current_angle - 90)))
+        cv2.line(canvas, current_pos, (target_x, target_y), (0, 255, 0), 2)  # current angle line
 
     cv2.putText(canvas, "Top-down trajectory (X-Z): NAV.py", (10, 20),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
