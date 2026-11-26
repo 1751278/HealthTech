@@ -4,7 +4,7 @@ import keyboard
 
 # Replace 'COM4' with the specific port assigned by your OS
 # For Mac/Linux use something like '/dev/cu.ESP32_Serial'
-COM_PORT = 'COM17' 
+COM_PORT = 'COM13' 
 BAUD_RATE = 115200
 
 def receive_bluetooth_data():

@@ -36,7 +36,7 @@ import json
 
 import zmq
 from zmq.decorators import socket
-
+import trajectory_helper as traj_helper
 from goal_nav import GoalNav, Speaker, VoiceGoal
 from llm_vision import LLMVisionAssistant
 from LLM_Yolo_integration import LLMProcessor
@@ -577,15 +577,17 @@ def navigate():
         if not cap.isOpened():
             print("Error: Could not open video source.")
             exit()
-
+    t_angle = 0  # Initialize target angle for navigation
     frame_num   = 0
     depth_color = None
     boxes       = []
     boxes26     = []
+    traj_canvas = None
+    trajectory_raw = []
+    trajectory = None
     old_llm_response = None #Stores the last llm_response to be compared
     # FIX: initialize direction so the arrow doesn't crash before depth runs
     direction = 0.0
-
     # Bound here so the depth block is the only place that assigns them, and
     # consumers downstream can test for None instead of risking NameError.
     depth_uint8 = None
@@ -648,15 +650,26 @@ def navigate():
             feedback_msg = receiver.recv()
 
             data = json.loads(feedback_msg.decode('utf-8'))
-            #Data from vo processing
-            trajectory = np.array(data['trajectory'], dtype=np.float32)
 
-
-            latest_traj = trajectory[-1]
-            #print("Received trajectory:", trajectory.shape)
             heading_degrees = data['vo'][0]
-            #print(heading_degrees)
+            print(heading_degrees)
             loop_closure_detected = data['vo'][1]
+
+            new_traj_point = data['trajectory'][-1:]  # Get the last point in the trajectory
+            #print("New trajectory point received:", new_traj_point)
+            new_point = (float(np.array(new_traj_point[0])[0,0]), float(np.array(new_traj_point[0])[2,0]))  # Convert to (x, z) tuple
+            old_point = (float(np.array(trajectory_raw[-1])[0,0]), float(np.array(trajectory_raw[-1])[2,0])) if trajectory_raw else (0,0)
+            if len(trajectory_raw) < 10 or math.dist(new_point, old_point) > 3:  # Only add if it's the first point or sufficiently far from the last
+                trajectory_raw.append(new_traj_point[0])  # Add the new point to the trajectory
+
+            #Data from vo processing
+            trajectory = [(float(p[0, 0]), float(p[2, 0])) for p in np.array(trajectory_raw, dtype=np.float32)] #Get the data, convert it, then store as a list of (x, z) tuples
+            #print(trajectory[-1)
+
+
+            t_angle = traj_helper.find_best_traj_angle(trajectory, heading_degrees, prev_angle = t_angle) #Target angle to move
+            #print(t_angle)
+            traj_canvas = draw_trajectory_canvas(np.array(trajectory_raw, dtype=np.float32), heading_degrees, t_angle)
 
         # --- Depth estimation ---
         if frame_num % args.depth_interval == 0:
@@ -664,29 +677,8 @@ def navigate():
 
             depth_map = get_tflite_depth(frame)  # run TFLITE depth estimation
             depth_uint8 = depth_map.astype(np.uint8)
-            # raw_steer is the new candidate direction based on current depth map
-            raw_steer, col, stats = get_steer(depth_uint8)
 
             direction = get_better_steer(depth_uint8)
-
-            # Hysteresis: only commit to a new direction after HYSTERESIS_FRAMES
-            # consecutive frames agree on it.
-            vote_buffer.append(raw_steer)
-            if len(vote_buffer) == HYSTERESIS_FRAMES and len(set(vote_buffer)) == 1:
-                if committed_steer != raw_steer:
-                    #print(f"Steering change: {committed_steer} -> {raw_steer}")
-
-                    # FIX: play audio from the start of the file, not 1 second in
-                    #data, sr = sf.read(AUDIO_FORWARD)  # default to forward sound
-                    if raw_steer == "TURN LEFT <<":
-                        #data, sr = sf.read(AUDIO_LEFT)
-                        pass
-                    elif raw_steer == ">> TURN RIGHT":
-                        #data, sr = sf.read(AUDIO_RIGHT)
-                        pass
-                    #sd.play(data, sr)
-
-                committed_steer = raw_steer
 
             # Index into LUT for fast colormap application
             depth_color = LUT[depth_uint8]
@@ -696,38 +688,31 @@ def navigate():
 
         
         labels_door = []
-        # --- Door detection ---
-        if frame_num % args.yolo_door_interval == 0:
-            yoloe.set_classes(["door", "doorway"])
-            results = yoloe.predict(frame, verbose=False)
-            boxes   = results[0].boxes
-            obj_box_context_door = boxes.xyxy.cpu().round().int().tolist()
+        #only run yolo e in main loop if action not in progress
+        if act.get_action_state() != "in_progress":
+            # --- Door detection ---
+            if frame_num % args.yolo_door_interval == 0:
+                yoloe.set_classes(["door", "doorway"])
+                results = yoloe.predict(frame, verbose=False)
+                boxes   = results[0].boxes
+                obj_box_context_door = boxes.xyxy.cpu().round().int().tolist()
 
-        # --- Draw Frame ---
-        max_conf = 0
-        index = -1
-        #Pick the best door (highest confidence) and use that to steer toward the door
-        for i, box in enumerate(boxes):
-            label           = yoloe.names[int(box.cls[0])]
-            labels_door.append(label)
-            x1, y1, x2, y2 = map(int, box.xyxy[0])  # bounding box coordinates
-            color           = BOX_COLOR_DOOR
-            conf = box.conf.item()
-            if conf > max_conf and conf > DOOR_CONFIDENCE_THRESHOLD and 'door' in label:
-                max_conf = conf
-                index = i
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)  # draw box
-            cv2.putText(frame, label, (x1, y1 - 5),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)  # draw label
-
-        #Get straightline steering to the door if one is detected with high confidence
-        if index != -1:
-            door_direction = get_door_steer(boxes[index], w, yolo.names)
-            door_state["last_seen_frame"] = frame_num
-        else:
-            door_direction = door_state["last_door_direction"]  # keep going toward the last known door direction if we lose sight of it
-            max_conf = door_state["last_door_confidence"]*math.exp(-0.01*(frame_num - door_state["last_seen_frame"])) #If we don't see a door, use the last known confidence to determine how much to trust the last known direction
-            #print(max_conf, " On frame: ", frame_num - door_state["last_seen_frame"], " Orignial confidence: ", door_state["last_door_confidence"])
+            # --- Draw Frame ---
+            max_conf = 0
+            index = -1
+            #Pick the best door (highest confidence) and use that to steer toward the door
+            for i, box in enumerate(boxes):
+                label           = yoloe.names[int(box.cls[0])]
+                labels_door.append(label)
+                x1, y1, x2, y2 = map(int, box.xyxy[0])  # bounding box coordinates
+                color           = BOX_COLOR_DOOR
+                conf = box.conf.item()
+                if conf > max_conf and conf > DOOR_CONFIDENCE_THRESHOLD and 'door' in label:
+                    max_conf = conf
+                    index = i
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)  # draw box
+                cv2.putText(frame, label, (x1, y1 - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)  # draw label
 
 
 
@@ -757,6 +742,7 @@ def navigate():
         labels_door = labels_door
         obj_box_context_door = obj_box_context_door
 
+        dummy_answer = {'action': 'straight', 'search': ['door', 'hallway'], 'reasoning': ''}
         if act.get_action_state() != "in_progress" and start_llm:
             #LLM Handler
             #Should only be able to handle objects
@@ -774,20 +760,17 @@ def navigate():
                 if llm_response != old_llm_response: #Check if it is the same response as before
                     old_llm_response = llm_response
                     print(obj_box_context_door)
-                    act.update_action(llm_response, heading_degrees, frame, llm_processor.max_size, llm_processor.xyxy_rescale) #Updates the action state based on the LLM response
+                    act.update_action(llm_response, heading_degrees, frame, llm_processor.max_size, llm_processor.xyxy_rescale, yoloe) #Updates the action state based on the LLM response
                 else:
                     print("LLM response is the same as the previous one.")
                 
         if act.get_action_state() == "in_progress":
-            track_bbox, combined_direction = act.get_update_dir(frame, heading_degrees)
-            cv2.rectangle(frame, (track_bbox[0], track_bbox[1]), (track_bbox[2], track_bbox[3]), (255, 255, 0), 2)  # draw box
-
-        target_dir, target_conf = door_direction, max_conf
-        #combined_direction = combine_steer(direction, target_dir, target_conf, col['c'])
+            modified_frame, combined_direction = act.get_update_dir(frame, heading_degrees, trajectory)
+            frame = modified_frame
 
         #smoothen direction with moving average
         direction_history[:-1] = direction_history[1:]
-        direction_history[-1] = combined_direction
+        direction_history[-1] = direction if combined_direction == 0 else combined_direction
         directionArray = direction_history * direction_smoothen
         smooth_direction = np.sum(directionArray)
         ### Direction should be finalized at this point
@@ -807,9 +790,6 @@ def navigate():
         end_point = (int(math.sin(math.radians(smooth_direction)) * 100 + w//2), int(-math.cos(math.radians(smooth_direction)) * 100 + h//2))
         cv2.arrowedLine(frame, start_point, end_point, (0, 255, 0), 2)  # draw green arrow for avoidance direction
 
-        end_point = (int(math.sin(math.radians(target_dir)) * 100 + w//2), int(-math.cos(math.radians(target_dir)) * 100 + h//2))
-        cv2.arrowedLine(frame, start_point, end_point, (0, 0, 255), 2)  # draws red arrow for door/target direction
-
         end_point = (int(math.sin(math.radians(combined_direction)) * 100 + w//2), int(-math.cos(math.radians(combined_direction)) * 100 + h//2))
         cv2.arrowedLine(frame, start_point, end_point, (255, 0, 0), 2)  # draws blue arrow for FINAL direction
 
@@ -818,7 +798,8 @@ def navigate():
         # display camera frame and depth side by side
         out = np.hstack([frame, depth_color,save_frame]) if depth_color is not None else frame
         cv2.imshow('navigator', out)
-
+        if traj_canvas is not None:
+            cv2.imshow('trajectory', traj_canvas)
 
 
 
@@ -867,6 +848,43 @@ def _open_audio_stream():
         return None
 
 
+def draw_trajectory_canvas(trajectory, current_angle, best_angle, distance = 30, canvas_size=600, world_scale=1.0):
+    """Renders the X-Z trajectory onto a fresh top-down canvas each call."""
+    canvas = np.full((canvas_size, canvas_size, 3), 30, dtype=np.uint8)
+    cx, cy = canvas_size // 2, canvas_size // 2
+    cv2.circle(canvas, (cx, cy), 3, (0, 0, 255), -1)  # origin marker
+
+    pts = []
+    for p in trajectory:
+        x, z = float(p[0, 0]), float(p[2, 0])
+        px = int(x * world_scale) + cx
+        py = int(-z * world_scale) + cy #make z-axis go "up" in the image
+        pts.append((px, py))
+
+    for i in range(1, len(pts), 2):  # draw lines between every other point for clarity
+        cv2.line(canvas, pts[i - 1], pts[i], (0, 255, 0), 2)
+
+    if pts:
+        cv2.circle(canvas, pts[-1], 4, (255, 255, 0), -1)  # current position
+    
+    # Draw the target angle line from the current position
+    if pts:
+        current_pos = pts[-1]
+        target_x = int(current_pos[0] + distance * np.cos(np.radians(best_angle)))
+        target_y = int(current_pos[1] + distance * np.sin(np.radians(best_angle)))
+        cv2.line(canvas, current_pos, (target_x, target_y), (0, 0, 255), 2) # best angle line
+
+        target_x = int(current_pos[0] + distance * np.cos(np.radians(current_angle - 90)))
+        target_y = int(current_pos[1] + distance * np.sin(np.radians(current_angle - 90)))
+        cv2.line(canvas, current_pos, (target_x, target_y), (0, 255, 0), 2)  # current angle line
+
+    cv2.putText(canvas, "Top-down trajectory (X-Z): NAV.py", (10, 20),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+    return canvas
+
+
+
+
 # calling the function
 if __name__ == "__main__":
     #starts callback audio stream for non-blocking sound playback
@@ -876,3 +894,4 @@ if __name__ == "__main__":
             navigate()
     else:
         navigate()
+
