@@ -6,6 +6,7 @@ from ultralytics import engine
 import cv2
 import numpy as np
 import trajectory_helper as traj_helper
+import time
 
 class Action:
     def __init__(self):
@@ -24,8 +25,8 @@ class Action:
         self.yoloE = None 
         self.floor_seg = None
         self.detections = None
-        self.detected = (False, 0) #(is something detected, class, num frames detected)
-        self.search_turning = (False, 0) #first value is whether to turn to search and second number is number of frames since turn begin
+        self.detected = [False, 0] #(is something detected, class, num frames detected)
+        self.search_turning = [False, 0] #first value is whether to turn to search and second number is number of frames since turn begin
         self.traj_angle = 0
 
         self.modified_frame = None
@@ -69,11 +70,10 @@ class Action:
             self.bounding_box_tracker = (self.bounding_box[0], self.bounding_box[1], self.bounding_box[2]-self.bounding_box[0], self.bounding_box[3]-self.bounding_box[1])  # Convert to (x, y, w, h)
             self.tracker.init(frame, self.bounding_box_tracker)
         if self.action_type == "straight":
-            self.speak_non_blocking("SoundAssets/now_exploring.mp3")
-            self.search_objects = llm_dict["search"]
+            self.search_objects = llm_dict['search']
             self.yoloE = yoloE
-            self.yoloE.set_classes(self.search_objects.append("open_floor"))# adding open floor to search space to help with navigation
-
+            self.search_objects.insert(0, 'open floor')# adding open floor to search space to help with navigation
+            self.yoloE.set_classes(self.search_objects)
     def turn(self):
         #Determine the direction to turn based on the heading_degrees and the action specified in llm_dict
         target_direction = self.starting_heading_degrees + self.llm_dict["angle"]
@@ -102,12 +102,12 @@ class Action:
     def search(self, frame, trajectory, confidence_thresh=0.6, detect_num_frame_thresh=10):
         self.modified_frame = frame.copy()
         h, w = frame.shape[:2]
-        results = self.yoloE.predict(frame)
+        results = self.yoloE.predict(frame, retina_masks=True, verbose=False)
         result_dict = self.get_yolo_results(results)
         self.floor_seg = None
         self.detections = []
         for detection in result_dict:
-            if detection['class_name'] == "open floor" and detection['confidence'] > confidence_thresh:
+            if detection['class_name'] == "open floor" and detection['confidence'] > confidence_thresh-0.4:
                 self.floor_seg = detection['mask']
                 self.modified_frame = self.apply_mask(self.modified_frame, detection)
 
@@ -117,7 +117,7 @@ class Action:
                 if self.detections:
                     self.detected[1]+=1#add to total detection count
                 else:
-                    self.detected = (False, 0)
+                    self.detected = [False, 0]
         # When something is detected turn towards it 
         if self.detected[1]>detect_num_frame_thresh:
             if self.detected[0] == False:
@@ -134,22 +134,23 @@ class Action:
                 if self.timer(3):  # Wait for 3 seconds to ensure stability
                     self.action_state = "done"
                     self.start_time = None  # Reset the timer for future actions
-                    self.detected = (False, 0)
+                    self.detected = [False, 0]
             return frame_center[0] - box_center[0]
 
         #If no floor then turn to look around
-        if self.floor_seg == None:
+        if self.floor_seg is None:
             self.search_turning[0] = True
             if self.search_turning[1] == 0:
                 self.speak_non_blocking("SoundAssets/turn.mp3")
             self.search_turning[1] += 1
             return 90 #turn 90 degrees
-        else:#find best direction to go in 
+        else: #find best direction to go in 
             self.traj_angle = traj_helper.find_best_traj_angle(trajectory, self.heading_degrees, prev_angle = self.traj_angle)
             self.seg_angle = traj_helper.find_best_navigation_direction(frame, self.floor_seg, self.traj_angle-(self.heading_degrees-90))
-            if self.seg_angle != None:
-                if self.search_turning[0]:
+            if self.seg_angle is not None:
+                if self.search_turning[0]==True:
                     self.speak_non_blocking("SoundAssets/now_exploring.mp3")
+                    time.sleep(1)
                 self.search_turing = (False, 0)
                 return self.seg_angle
             else:
@@ -158,8 +159,6 @@ class Action:
                     self.speak_non_blocking("SoundAssets/turn.mp3")
                 self.search_turning[1] += 1
                 return 90 #turn 90 degrees
-                
-            
 
     def timer(self, duration):
         #Simple timer function to check if the specified duration has passed
@@ -184,7 +183,8 @@ class Action:
                 self.modified_frame = self.apply_bbox(self.modified_frame, bbox_cv2, "tracking")
                 return self.modified_frame, max(-90, min(90, direction_error))
             if self.action_type == "straight":
-                return self.modified_frame, self.search(frame, trajectory)
+                best_angle = self.search(frame, trajectory)
+                return self.modified_frame, best_angle
 
     # parse through yolo e results
     def get_yolo_results(self, results):
@@ -215,7 +215,7 @@ class Action:
             }
 
             if masks is not None:
-                detection["mask"] = masks.xy[index].detach().cpu().numpy()#sending as polygon contour
+                detection["mask"] = masks.xy[index]#sending as polygon contour
 
             detections.append(detection)
 

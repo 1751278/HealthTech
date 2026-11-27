@@ -46,15 +46,16 @@ def find_best_traj_angle(trajectory, current_angle, prev_angle = None, angular_s
 
     return best_angle
 
-def find_best_navigation_direction(frame, floor_seg, traj_angle, angular_step=10, min_ray_length=80, clearance_width=80):
+def find_best_navigation_direction(frame, floor_seg, traj_angle, angular_step=10, min_ray_length=100, clearance_width=80):
     h, w = frame.shape[:2]
     polygon = Polygon(floor_seg)
-    start_point = (w//2, h)  # (x, y) in cv2 coordinate system
-    max_ray_length = math.hypot(h, w) + 1  # Should be larger than your image diagonal
+    start_point = (w//2, h-10)  # (x, y) in cv2 coordinate system
+    max_ray_length = math.hypot(h, w) + 100  # Should be larger than your image diagonal
     ray_lengths = [] # will contain (distance to edge of mask, angle_deg)
-    for angle_deg in range (-80, 80, angular_step):
+    for angle_deg in range (-80, 80+1, angular_step):
         ray_lengths.append(find_distance_edge(start_point, max_ray_length, angle_deg, polygon))
 
+    print(ray_lengths)
     maxima_values = [ray_lengths[i] for i in range(1, len(ray_lengths) - 1) 
                     if ray_lengths[i - 1][0] < ray_lengths[i][0] > ray_lengths[i + 1][0]]#finds the local maxima
     if ray_lengths[0][0]>ray_lengths[1][0]:# find if end points are maxima too
@@ -62,43 +63,76 @@ def find_best_navigation_direction(frame, floor_seg, traj_angle, angular_step=10
     if ray_lengths[-1][0]>ray_lengths[-2][0]:
         maxima_values.append(ray_lengths[-1])
 
+    print(maxima_values)
     filtered = [lengths for lengths in maxima_values if lengths[0]>min_ray_length]#filter out any rays that are not long enough
 
     enough_clearance = []#find if there is enough clearance to go through path
     for distance, angle_deg in filtered:
-        if (find_distance_edge(start_point-(clearance_width//2), max_ray_length, angle_deg, polygon)[0] > distance*0.6 and
-            find_distance_edge(start_point+(clearance_width//2), max_ray_length, angle_deg, polygon)[0] > distance*0.6):
+        left_start = (start_point[0] - (clearance_width//2), start_point[1])
+        right_start = (start_point[0] + (clearance_width//2), start_point[1])
+        if (find_distance_edge(left_start, max_ray_length, angle_deg, polygon)[0] > distance*0.6 and
+            find_distance_edge(right_start, max_ray_length, angle_deg, polygon)[0] > distance*0.6):
             enough_clearance.append((distance, angle_deg))
 
+    print(f"enough_clearance:{enough_clearance}")
+    maxima_values_2 = None
+    if len(enough_clearance)>=3:
+        maxima_values_2 = [enough_clearance[i] for i in range(1, len(enough_clearance) - 1)#filter out straight pathways
+                        if enough_clearance[i - 1][0] < enough_clearance[i][0] > enough_clearance[i + 1][0]]#finds the local maxima
+        if enough_clearance[0][0]>enough_clearance[1][0]:# find if end points are maxima too
+            maxima_values_2.append(enough_clearance[0])
+        if enough_clearance[-1][0]>enough_clearance[-2][0]:
+            maxima_values_2.append(enough_clearance[-1])
+    elif len(enough_clearance)>0:
+        maxima_values_2 = [max(enough_clearance, key=lambda x: x[0])]
+    else:
+        maxima_values_2 = None
+
     best_angle = None
-    if enough_clearance:
-        possible_angles = [data[1] for data in enough_clearance]
+    if maxima_values_2:
+        possible_angles = [data[1] for data in maxima_values_2]
         best_angle = min(possible_angles, key=lambda x: abs(x - traj_angle))
+            
     return best_angle
 
 
 # find the distance from point to edge of seg from angle
 def find_distance_edge(start_point, max_ray_length, angle_deg, polygon):
-    angle_rad = math.radians(angle_deg)
+    angle_rad = math.radians(angle_deg - 90)
     end_x = start_point[0] + max_ray_length * math.cos(angle_rad)
     end_y = start_point[1] + max_ray_length * math.sin(angle_rad)
     ray = LineString([start_point, (end_x, end_y)])
 
-    # 5. Find intersection with the polygon's exterior boundary
     intersection = ray.intersection(polygon.exterior)
 
-    if not intersection.is_empty:
-        origin = Point(start_point)
-        # Handle cases where the ray hits multiple edges (e.g., concave shapes)
-        if intersection.geom_type == "Point":
-            distance = origin.distance(intersection)
-            return (distance, angle_deg)
-
-        elif intersection.geom_type in ["MultiPoint", "GeometryCollection"]:
-            # Find the closest intersection point to the origin
-            points = [geom for geom in intersection.geoms if geom.geom_type == "Point"]
-            closest = min(points, key=lambda p: origin.distance(p))
-            distance = origin.distance(closest)
-            return (distance, angle_deg)
-    else:
+    if intersection.is_empty:
         return (0, angle_deg)
+
+    origin = Point(start_point)
+    points = []
+
+    def extract_points(geom):
+        if geom.is_empty:
+            return
+        if geom.geom_type == "Point":
+            points.append(geom)
+        elif geom.geom_type == "LineString":
+            for coord in geom.coords:
+                points.append(Point(coord))
+        elif hasattr(geom, "geoms"):
+            # Handles MultiPoint, GeometryCollection, MultiLineString, etc.
+            for subgeom in geom.geoms:
+                extract_points(subgeom)
+
+    extract_points(intersection)
+
+    # Filter out points that are right at the start location
+    valid_points = [p for p in points if origin.distance(p) > 1e-9]
+
+    if not valid_points:
+        return (0, angle_deg)
+
+    closest = min(valid_points, key=lambda p: origin.distance(p))
+    distance = origin.distance(closest)
+    
+    return (distance, angle_deg)

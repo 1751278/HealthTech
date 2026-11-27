@@ -652,7 +652,7 @@ def navigate():
             data = json.loads(feedback_msg.decode('utf-8'))
 
             heading_degrees = data['vo'][0]
-            print(heading_degrees)
+            #print(heading_degrees)
             loop_closure_detected = data['vo'][1]
 
             new_traj_point = data['trajectory'][-1:]  # Get the last point in the trajectory
@@ -692,7 +692,7 @@ def navigate():
         if act.get_action_state() != "in_progress":
             # --- Door detection ---
             if frame_num % args.yolo_door_interval == 0:
-                yoloe.set_classes(["door", "doorway"])
+                yoloe.set_classes(["door", "doorway", "open floor"])
                 results = yoloe.predict(frame, verbose=False)
                 boxes   = results[0].boxes
                 obj_box_context_door = boxes.xyxy.cpu().round().int().tolist()
@@ -756,16 +756,16 @@ def navigate():
             time.sleep(0.1) #Sleep for a bit 
             #LLM Reciever
             llm_response = llm_processor.get_result() #Gets the latest LLM result, not necessarily new from the last frame. Format is described in the prompt
+            print(llm_response)
             if llm_response is not None:
                 if llm_response != old_llm_response: #Check if it is the same response as before
                     old_llm_response = llm_response
-                    print(obj_box_context_door)
-                    act.update_action(llm_response, heading_degrees, frame, llm_processor.max_size, llm_processor.xyxy_rescale, yoloe) #Updates the action state based on the LLM response
+                    act.update_action(dummy_answer, heading_degrees, frame.copy(), llm_processor.max_size, llm_processor.xyxy_rescale, yoloe) #Updates the action state based on the LLM response
                 else:
                     print("LLM response is the same as the previous one.")
                 
         if act.get_action_state() == "in_progress":
-            modified_frame, combined_direction = act.get_update_dir(frame, heading_degrees, trajectory)
+            modified_frame, combined_direction = act.get_update_dir(frame.copy(), heading_degrees, trajectory)
             frame = modified_frame
 
         #smoothen direction with moving average
